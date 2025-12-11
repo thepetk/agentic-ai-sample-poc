@@ -101,7 +101,7 @@ class IngestionService:
         for p_title in raw_pipelines:
             logger.debug(f"Parsing pipeline {p_title}...")
             _pipeline_config: "dict[str, str]" = raw_pipelines[p_title]
-            logger.debug(f"Pipeline {p_title} type: {_pipeline_config["source"]}")
+            logger.debug(f"Pipeline {p_title} type: {_pipeline_config['source']}")
 
             if _pipeline_config["source"] == SourceTypes.GITHUB:
                 source_config = SourceConfig(
@@ -119,7 +119,8 @@ class IngestionService:
                 )
             else:
                 logger.error(
-                    f"Unknown source type '{_pipeline_config["source"]}' in pipeline '{_pipeline_config["name"]}'"
+                    f"Unknown source type '{_pipeline_config['source']}' "
+                    f"in pipeline '{_pipeline_config['name']}'"
                 )
                 continue
 
@@ -127,7 +128,7 @@ class IngestionService:
                 name=_pipeline_config["name"],
                 enabled=_pipeline_config["enabled"],
                 version=_pipeline_config["version"],
-                vector_store_name=f"{_pipeline_config["vector_store_name"]}",
+                vector_store_name=f"{_pipeline_config['vector_store_name']}",
                 source=_pipeline_config["source"],
                 source_config=source_config,
             )
@@ -173,12 +174,15 @@ class IngestionService:
             except Exception as e:
                 if attempt < max_retries - 1:
                     logger.info(
-                        f"Attempt {attempt + 1}/{max_retries}: Llama Stack not ready yet. Retrying in {retry_delay}s..."
+                        f"Attempt {attempt + 1}/{max_retries}: "
+                        f"Llama Stack not ready yet. "
+                        f"Retrying in {retry_delay}s..."
                     )
                     time.sleep(retry_delay)
                 else:
                     logger.error(
-                        f"Failed to connect to Llama Stack after {max_retries} attempts: {e}"
+                        f"Failed to connect to Llama Stack "
+                        f"after {max_retries} attempts: {e}"
                     )
                     _initialized = False
         if not _initialized:
@@ -432,7 +436,9 @@ class IngestionService:
                     file_id=doc.id,
                 )
                 logger.info(
-                    f"✓ Successfully inserted documents into '{vector_store_name}' with resp '{file_ingest_response}'"
+                    f"✓ Successfully inserted documents into "
+                    f"'{vector_store_name}' "
+                    f"with resp '{file_ingest_response}'"
                 )
             return True
 

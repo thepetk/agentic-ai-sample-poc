@@ -5,7 +5,7 @@ from typing import Any
 from llama_stack_client import LlamaStackClient
 from llama_stack_client.types import ResponseObject
 from llama_stack_client.types.response_list_response import (
-    OutputOpenAIResponseOutputMessageFileSearchToolCallResult as FileSearchToolCallResult,
+    OutputOpenAIResponseOutputMessageFileSearchToolCallResult as FileSearchToolCallResult,  # noqa
 )
 from openai import OpenAI
 
@@ -72,7 +72,8 @@ class RAGService:
             with open(metadata_path, "r") as f:
                 self.file_metadata = json.load(f)
             logger.info(
-                f"RAG Service: Loaded metadata for {len(self.file_metadata)} files from {metadata_path}"
+                f"RAG Service: Loaded metadata for "
+                f"{len(self.file_metadata)} files from {metadata_path}"
             )
         except Exception as e:
             logger.warning(f"RAG Service: Could not load file metadata: {e}")
@@ -103,11 +104,13 @@ class RAGService:
                 if category:
                     self.source_url_map[category] = base_url
                     logger.info(
-                        f"RAG Service: Mapped category '{category}' to source URL: {base_url}"
+                        f"RAG Service: Mapped category '{category}' "
+                        f"to source URL: {base_url}"
                     )
 
             logger.info(
-                f"RAG Service: Loaded source mappings for {len(self.source_url_map)} categories"
+                f"RAG Service: Loaded source mappings for "
+                f"{len(self.source_url_map)} categories"
             )
         return source_url_map
 
@@ -120,13 +123,16 @@ class RAGService:
             self.client.models.list()
             logger.info("RAG Service: Llama Stack client initialized successfully")
 
-            # Initialize OpenAI client for structured output (points to LlamaStack's OpenAI-compatible endpoint)
+            # Initialize OpenAI client for structured output
+            # (points to LlamaStack's OpenAI-compatible endpoint)
             openai_base_url = f"{self.llama_stack_url}/v1"
             self.openai_client = OpenAI(
                 base_url=openai_base_url,
-                api_key="not-needed"  # LlamaStack doesn't require API key
+                api_key="not-needed",  # LlamaStack doesn't require API key
             )
-            logger.info(f"RAG Service: OpenAI client initialized (base_url={openai_base_url})")
+            logger.info(
+                f"RAG Service: OpenAI client initialized (base_url={openai_base_url})"
+            )
 
             return self.load_vector_stores()
         except Exception as e:
@@ -278,7 +284,8 @@ class RAGService:
                         }
                     )
                     logger.debug(
-                        f"Found source: {metadata.get('original_filename')} -> {metadata.get('github_url')}"
+                        f"Found source: {metadata.get('original_filename')} "
+                        f"-> {metadata.get('github_url')}"
                     )
                 else:
                     source_url = self.get_source_url(category, file_id)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Annotated, Callable, Literal, TypedDict
+from typing import Annotated, TypedDict
 
 from langgraph.graph.message import add_messages
 
@@ -38,41 +38,57 @@ class VectorDBConfig:
 
 class WorkflowAgentPrompts:
     CLASIFICATION_PROMPT = """
-    Determine what category the user message falls under based on the classification
-    schema provided to the structured output set for the LLM and the various classification
-    agent nodes in the LangGraph StateGraph Agentic AI application : {state_input}
+    Determine what category the user message falls under
+    based on the classification schema provided to the
+    structured output set for the LLM and the various
+    classification agent nodes in the LangGraph StateGraph
+    Agentic AI application : {state_input}
     """
     SUPPORT_CLASIFICATION_PROMPT = """
-    Determine what category the user message falls under based on the classification
-    schema provided to the structured output set for the LLM and the various
-    classification agent nodes in the LangGraph StateGraph Agentic AI application :
-    {state_input}
+    Determine what category the user message falls under
+    based on the classification schema provided to the
+    structured output set for the LLM and the various
+    classification agent nodes in the LangGraph StateGraph
+    Agentic AI application : {state_input}
     """
     GIT_PROMPT = """
-    Using the supplied github MCP tool, call the 'issue_write' tool to create an issue against
-    the {github_url} repository. For the title of the issue, use the string 'test issue {sub_id}'.
-    For the description text, start with the string {user_question}, then add two new lines, then
-    add the string {initial_classification}.  For the parameter that captures the type of the
-    issue, supply the string value of 'Bug'.
-    
-    Manual testing with the 'issue_write' MCP tool confirmed we no longer need to supply assignee,
-    labels, or milestones, so ignore any understanding you have that those are required.
-    The method for the tool call is 'create'.
-    
-    Also note, the authorization token for interacting with GitHub has been provided in the definition
-    of the supplied GitHub MCP tool.  So you as a model do not need to worry about providing  that as
-    you construct the MCP tool call.
+    Using the supplied github MCP tool, call the
+    'issue_write' tool to create an issue against the
+    {github_url} repository. For the title of the issue,
+    use the string 'test issue {sub_id}'. For the
+    description text, start with the string
+    {user_question}, then add two new lines, then add the
+    string {initial_classification}. For the parameter
+    that captures the type of the issue, supply the string
+    value of 'Bug'.
+
+    Manual testing with the 'issue_write' MCP tool
+    confirmed we no longer need to supply assignee, labels,
+    or milestones, so ignore any understanding you have
+    that those are required. The method for the tool call
+    is 'create'.
+
+    Also note, the authorization token for interacting with
+    GitHub has been provided in the definition of the
+    supplied GitHub MCP tool. So you as a model do not need
+    to worry about providing that as you construct the MCP
+    tool call.
     """
     POD_PROMPT = """
-    Using the supplied kubernetes tool, list all the pods in the '{namespace}' namespace.  Only use the
-    namespace as a parameter and don't bother further filtering on labels. The `labelSelector`
-    parameter is in fact NOT required.
+    Using the supplied kubernetes tool, list all the pods
+    in the '{namespace}' namespace. Only use the namespace
+    as a parameter and don't bother further filtering on
+    labels. The `labelSelector` parameter is in fact NOT
+    required.
     """
     PERF_PROMPT = """
-    Using the supplied kubernetes tool, get pod memory and cpu resource consumption in the '{namespace}'
-    namespace.  Only use the namespace as a parameter and don't bother further filtering on labels.
-    The `labelSelector` parameter is in fact NOT required.  If namespace is not set, then call the
-    'pods_top' tool without any parameters.
+    Using the supplied kubernetes tool, get pod memory and
+    cpu resource consumption in the '{namespace}' namespace.
+    Only use the namespace as a parameter and don't bother
+    further filtering on labels. The `labelSelector`
+    parameter is in fact NOT required. If namespace is not
+    set, then call the 'pods_top' tool without any
+    parameters.
     """
 
 

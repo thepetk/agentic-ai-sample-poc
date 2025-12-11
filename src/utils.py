@@ -1,11 +1,11 @@
+import json
 import logging
 import os
-import json
-from typing_extensions import Literal
+
 from llama_stack_client.types import ResponseObject
+from typing_extensions import Literal
 
 from src.types import WorkflowState
-
 
 log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
 log_level = getattr(logging, log_level_str, logging.INFO)
@@ -36,7 +36,7 @@ def clean_text(text: "str") -> "str":
 
 def route_to_next_node(
     state: "WorkflowState",
-) -> "Literal['legal_agent', 'support_agent', 'hr_agent', 'sales_agent', 'procurement_agent', '__end__']":
+) -> "list[str]":
     if state["decision"] == "legal":
         return "legal_agent"
     elif state["decision"] == "techsupport":
@@ -87,9 +87,8 @@ def extract_rag_response_text(rag_response: "ResponseObject") -> "str":
                 _res_text += output_item.text + "\n"
 
         elif output_item.type == "file_search_call":
-            logger.debug(
-                f"RAG file_search executed with queries: {getattr(output_item, 'queries', [])}"
-            )
+            queries = getattr(output_item, "queries", [])
+            logger.debug(f"RAG file_search executed with queries: {queries}")
 
     return _res_text.strip()
 

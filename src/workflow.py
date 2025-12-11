@@ -2,8 +2,6 @@ import os
 from typing import Any
 
 from langgraph.graph import START, StateGraph
-from llama_stack_client import LlamaStackClient
-from openai import OpenAI
 
 from src.constants import (
     DEFAULT_INFERENCE_MODEL,
@@ -90,13 +88,16 @@ class Workflow:
         factory function to create department-specific agents with consistent structure.
 
         Args:
-            department_name: Internal name for the department (e.g., 'legal', 'support')
+            department_name: Internal name for the department
+            (e.g., 'legal', 'support')
             department_display_name: Display name (e.g., 'Legal', 'Software Support')
             content_override: Optional content to override default prompt
             custom_llm: LLM model name for inference (e.g., 'ollama/llama3.2:3b')
             submission_states: Dictionary to store submission states
-            rag_category: Category name to select appropriate vector stores (e.g., 'legal', 'techsupport', 'hr', 'sales', 'procurement')
-            additional_prompt: Additional prompt instructions to append to the RAG prompt
+            rag_category: Category name to select appropriate vector stores (e.g.,
+            'legal', 'techsupport', 'hr', 'sales', 'procurement')
+            additional_prompt: Additional prompt instructions to append to the
+            RAG prompt
             is_terminal: Whether this agent marks the end of the workflow
         """
         if custom_llm is None:
@@ -131,11 +132,13 @@ class Workflow:
                 file_search_tool = self.rag_service.get_file_search_tool(rag_category)
                 if file_search_tool:
                     logger.info(
-                        f"{department_display_name}: RAG enabled with category '{rag_category}'"
+                        f"{department_display_name}: "
+                        f"RAG enabled with category '{rag_category}'"
                     )
                 else:
                     logger.info(
-                        f"{department_display_name}: No vector stores for '{rag_category}', using standard LLM"
+                        f"{department_display_name}: No vector stores for "
+                        f"'{rag_category}', using standard LLM"
                     )
                     use_rag = False
 
@@ -166,7 +169,8 @@ class Workflow:
                     state["rag_sources"] = sources
                     if sources:
                         logger.info(
-                            f"{department_display_name}: Found {len(sources)} source documents"
+                            f"{department_display_name}: Found {len(sources)} "
+                            "source documents"
                         )
 
                     if response_text:
@@ -176,13 +180,15 @@ class Workflow:
                         )
                     else:
                         logger.warning(
-                            f"{department_display_name}: RAG response empty, falling back to standard LLM"
+                            f"{department_display_name}: RAG response empty, "
+                            "falling back to standard LLM"
                         )
                         cm = self._call_openai_llm(state)
 
                 except Exception as e:
                     logger.error(
-                        f"{department_display_name}: RAG call failed: {e}, falling back to standard LLM"
+                        f"{department_display_name}: RAG call failed: {e}, "
+                        "falling back to standard LLM"
                     )
                     cm = self._call_openai_llm(state)
             else:
@@ -215,7 +221,8 @@ class Workflow:
         """Create and configure the overall workflow with all agents and routing.
 
         Args:
-            tools_llm: LLM model name for classification, inference, and tool usage (e.g., 'ollama/llama3.2:3b')
+            tools_llm: LLM model name for classification, inference, and tool usage
+            (e.g., 'ollama/llama3.2:3b')
             git_token: GitHub personal access token for git agent MCP calls (optional)
             guardrail_model: Model name for content moderation/safety checks (optional)
             github_url: GitHub repository URL for creating issues (optional)
@@ -250,11 +257,13 @@ class Workflow:
             rag_category="hr",
             additional_prompt="""
             FantaCo's benefits description is organized into such categories as:
-            - bare necessities: workspace, as well as benefits such as health care, vacation or PTO, retirement plans
-            - beyond the basics: music, parties and activities, food and driving services, bonuses
+            - bare necessities: workspace, as well as benefits such as health care,
+            vacation or PTO, retirement plans
+            - beyond the basics: music, parties and activities, food and driving
+            services, bonuses
             - and then some minor caveats: random set of participation requirements
-            if possible, try to narrow the scope of the response to the details that fall under on of those sub-sections of 
-            the benefits document.
+            if possible, try to narrow the scope of the response to the details that
+            fall under on of those sub-sections of the benefits document.
             """,
             is_terminal=True,
         )
@@ -266,7 +275,8 @@ class Workflow:
             submission_states=submission_states,
             rag_category="sales",
             additional_prompt="""
-            FantaCo's sales operation manual outlines policies over ten broad categories :
+            FantaCo's sales operation manual outlines policies over ten
+            broad categories :
             - geographic territories
             - lead assignments
             - discounting
@@ -279,8 +289,9 @@ class Workflow:
             - escalations
             - performance
             - compliance
-            if possible, try to narrow the scope of the response to the details that fall under on of those sub-sections of 
-            the sales document.
+            if possible, try to narrow the scope of the response to the
+            details that fall under on of those sub-sections of the sales
+            document.
             """,
             is_terminal=True,
         )
@@ -297,7 +308,8 @@ class Workflow:
             - ethics and transparency
             - review
             - spending limits
-            if possible, try to narrow the scope of the response to the details that fall under on of those sub-sections of 
+            if possible, try to narrow the scope of the response to
+            the details that fall under on of those sub-sections of
             the procurement document.
             """,
             is_terminal=True,

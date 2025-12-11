@@ -1,13 +1,11 @@
 import asyncio
-from typing import Any
-import httpx
 import os
 import time
 import uuid
+from typing import Any
 
+import httpx
 import streamlit as st
-
-from src.types import Pipeline
 
 from src.constants import (
     DEFAULT_INFERENCE_MODEL,
@@ -16,6 +14,7 @@ from src.constants import (
 )
 from src.ingest import IngestionService
 from src.responses import RAGService
+from src.types import Pipeline
 from src.utils import logger
 from src.workflow import Workflow, submission_states
 
@@ -147,7 +146,8 @@ def skip_ingestion() -> "None":
         ingestion_state["pipelines"] = pipelines
         ingestion_state["vector_store_count"] = vector_store_count
         logger.info(
-            f"Ingestion skipped: loaded {len(pipelines)} pipelines from config, {vector_store_count} vector stores in database"
+            f"Ingestion skipped: loaded {len(pipelines)} pipelines from config, "
+            f"{vector_store_count} vector stores in database"
         )
     except Exception as e:
         logger.error(f"Failed to load pipelines from config: {e}")
@@ -201,10 +201,12 @@ async def run_ingestion_pipeline() -> "None":
         ingestion_state["ingested_count"] = len(ingested_items) if ingested_items else 0
         ingestion_state["vector_store_count"] = vector_store_count
         ingestion_state["message"] = (
-            f"Ingestion completed successfully! Processed {ingestion_state['ingested_count']} items."
+            "Ingestion completed successfully! "
+            f"Processed {ingestion_state['ingested_count']} items."
         )
         logger.info(
-            f"Ingestion completed: {ingestion_state['ingested_count']} items processed, {vector_store_count} vector stores in database"
+            f"Ingestion completed: {ingestion_state['ingested_count']} "
+            f"items processed, {vector_store_count} vector stores in database"
         )
 
     except Exception as e:
@@ -255,7 +257,11 @@ async def run_workflow_task(
 
         # Update submission_states with the final workflow result
         submission_states[submission_id] = result
-        logger.info(f"Workflow task completed for submission {submission_id}: decision={result.get('decision')}, complete={result.get('workflow_complete')}")
+        logger.info(
+            f"Workflow task completed for submission {submission_id}: "
+            f"decision={result.get('decision')}, "
+            f"complete={result.get('workflow_complete')}"
+        )
     except Exception as e:
         logger.error(f"Workflow task failed for submission {submission_id}: {e}")
         submission_states[submission_id] = {
@@ -354,8 +360,10 @@ def main():
             st.markdown(
                 """
             **Choose an option:**
-            - **Run Ingestion**: Process documents and create vector stores (recommended for first time)
-            - **Skip Ingestion**: Load pipeline configuration only (use if data is already ingested)
+            - **Run Ingestion**: Process documents and create vector stores
+            (recommended for first time)
+            - **Skip Ingestion**: Load pipeline configuration only
+            (use if data is already ingested)
             """
             )
 
@@ -450,7 +458,9 @@ def main():
 
     # Show background processing indicator but don't block UI
     if has_active_tasks:
-        st.info("⏳ Processing workflows in background... You can submit new questions.")
+        st.info(
+            "⏳ Processing workflows in background... You can submit new questions."
+        )
 
     tab1, tab2 = st.tabs(["📝 Submit Question", "📋 View Results"])
 
@@ -460,7 +470,9 @@ def main():
         with st.form("question_form", clear_on_submit=True):
             question = st.text_area(
                 "Enter your question:",
-                placeholder="e.g., What are the legal implications of using GPL licenses?",
+                placeholder=(
+                    "e.g., What are the legal implications of using GPL licenses?"
+                ),
                 height=100,
             )
 
@@ -511,13 +523,18 @@ def main():
         if view_mode == "Recent Submissions":
             if not st.session_state.get("active_submissions"):
                 st.info(
-                    "No submissions yet. Submit a question in the 'Submit Question' tab."
+                    "No submissions yet. Submit a question in "
+                    "the 'Submit Question' tab."
                 )
             else:
                 selected_sub = st.selectbox(
                     "Select a submission:",
                     st.session_state.active_submissions,
-                    format_func=lambda x: f"{x[:8]}... - {submission_states.get(x, {}).get('input', 'Unknown')[:50]}",
+                    format_func=lambda x: (
+                        f"{x[:8]}... - {
+                            submission_states.get(x, {}).get('input', 'Unknown')[:50]
+                        }",
+                    ),
                 )
 
                 if selected_sub:
@@ -531,9 +548,9 @@ def main():
                 else:
                     st.error(f"Submission ID '{search_id}' not found")
 
-    # Auto-refresh when there are active tasks (but don't block UI)
+    # auto-refresh when there are active tasks
     if has_active_tasks:
-        time.sleep(0.5)  # Small delay to avoid excessive refreshing
+        time.sleep(0.5)
         st.rerun()
 
 
@@ -551,11 +568,11 @@ def display_submission_details(submission_id: "str") -> "None":
     decision_lower = decision.lower()
 
     if decision_lower == "error":
-        st.error(f"❌ Workflow Failed - Error occurred during processing")
+        st.error("❌ Workflow Failed - Error occurred during processing")
     elif decision_lower == "unsafe":
-        st.error(f"⚠️ Workflow Blocked - Content flagged by moderation")
+        st.error("⚠️ Workflow Blocked - Content flagged by moderation")
     elif decision_lower == "unknown":
-        st.error(f"❓ Workflow Failed - Unable to classify request")
+        st.error("❓ Workflow Failed - Unable to classify request")
     elif is_complete:
         st.success(f"✅ Workflow Complete - Decision: {decision.upper()}")
     else:

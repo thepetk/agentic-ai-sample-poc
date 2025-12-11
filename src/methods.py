@@ -1,6 +1,3 @@
-from typing import Any
-
-from llama_stack_client import LlamaStackClient
 from openai import OpenAI
 
 from src.exceptions import AgentRunMethodParameterError
@@ -15,7 +12,6 @@ def classification_agent(
     topic_llm: "str | None",
     guardrail_model: "str | None",
 ) -> "WorkflowState":
-
     # check if necessary variables exist
     if openai_client is None:
         raise AgentRunMethodParameterError(
@@ -43,7 +39,7 @@ def classification_agent(
 
         # TODO: decide log level
         logger.info(
-            f"Classification result: '{state["input"]}' is flagged as '{moderation}'"
+            f"Classification result: '{state['input']}' is flagged as '{moderation}'"
         )
         state["decision"] = "unsafe"
         state["data"] = state["input"]
@@ -52,8 +48,10 @@ def classification_agent(
             for key, value in moderation.categories.model_extra.items()
             if value is True
         ]
+        categories_str = ", ".join(flagged_categories)
         state["classification_message"] = (
-            f"Classification result: '{state["input"]}' is flagged for: {', '.join(flagged_categories)}"
+            f"Classification result: '{state['input']}' "
+            f"is flagged for: {categories_str}"
         )
         return state
 
@@ -109,7 +107,7 @@ def classification_agent(
         state["classification_message"] = f"Classification error: {str(e)[:100]}"
         return state
     logger.info(
-        f"Classification result: {classification_result} for input '{state["input"]}'"
+        f"Classification result: {classification_result} for input '{state['input']}'"
     )
 
     state["decision"] = classification_result.classification
@@ -123,7 +121,6 @@ def support_classification_agent(
     openai_client: "OpenAI | None",
     topic_llm: "str | None",
 ) -> "WorkflowState":
-
     # check if necessary variables exist
     if openai_client is None:
         raise AgentRunMethodParameterError(
@@ -161,7 +158,8 @@ def support_classification_agent(
             return state
 
         logger.info(
-            f"Support Classification result: {classification_result} for input '{state["input"]}'"
+            f"Support Classification result: {classification_result} "
+            f"for input '{state['input']}'"
         )
 
     except Exception as e:
@@ -186,7 +184,7 @@ def git_agent(
     tools_llm: "str | None",
     github_url: "str | None",
 ) -> "WorkflowState":
-    logger.debug(f"git Agent request for submission: {state["submission_id"]}")
+    logger.debug(f"git Agent request for submission: {state['submission_id']}")
 
     # check if necessary variables exist
     if openai_client is None:
@@ -236,7 +234,7 @@ def pod_agent(
     openai_client: "OpenAI | None",
     tools_llm: "str | None",
 ) -> "WorkflowState":
-    logger.info(f"K8S Agent request for submission: {state["submission_id"]}")
+    logger.info(f"K8S Agent request for submission: {state['submission_id']}")
 
     # check if necessary variables exist
     if openai_client is None:
@@ -265,13 +263,15 @@ def pod_agent(
             tools=[openai_mcp_tool],
         )
         logger.debug(
-            f"K8S Agent successful return MCP request for submission: {state['submission_id']}"
+            f"K8S Agent successful return MCP request "
+            f"for submission: {state['submission_id']}"
         )
 
         state["mcp_output"] = extract_mcp_output(resp, agent_name="pod_agent")
     except Exception as e:
         logger.info(
-            f"K8s Agent unsuccessful return MCP request for submission {state['submission_id']} with error: '{e}'"
+            f"K8s Agent unsuccessful return MCP request "
+            f"for submission {state['submission_id']} with error: '{e}'"
         )
     return state
 
@@ -301,7 +301,8 @@ def perf_agent(
     }
     try:
         logger.debug(
-            f"K8S perf Agent making MCP request for submission: {state['submission_id']}"
+            f"K8S perf Agent making MCP request "
+            f"for submission: {state['submission_id']}"
         )
         resp = openai_client.responses.create(
             model=tools_llm,
@@ -309,12 +310,14 @@ def perf_agent(
             tools=[openai_mcp_tool],
         )
         logger.debug(
-            f"K8S perf Agent successful return MCP request for submission: {state['submission_id']}"
+            f"K8S perf Agent successful return MCP request "
+            f"for submission: {state['submission_id']}"
         )
 
         state["mcp_output"] = extract_mcp_output(resp, agent_name="perf_agent")
     except Exception as e:
         logger.info(
-            f"K8s perf Agent unsuccessful return MCP request for submission {state['submission_id']} with error: '{e}'"
+            f"K8s perf Agent unsuccessful return MCP request "
+            f"for submission {state['submission_id']} with error: '{e}'"
         )
     return state
