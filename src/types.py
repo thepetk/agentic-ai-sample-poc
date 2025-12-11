@@ -1,0 +1,136 @@
+from dataclasses import dataclass
+from typing import Annotated, Callable, Literal
+
+from langgraph.graph.message import add_messages
+
+RAW_PIPELINES_TYPE = list[dict[str, str | bool | dict[str, str]]]
+
+RAG_SERVICE_RESPONSE_TYPES = Literal[
+    "message",
+    "web_search_call",
+    "file_search_call",
+    "function_call",
+    "mcp_call",
+    "mcp_list_tools",
+    "mcp_approval_request",
+]
+
+
+@dataclass
+class SourceConfig:
+    url: "str"
+    branch: "str"
+    path: "str | None"
+    urls: "list[str] | None"
+
+
+@dataclass
+class Pipeline:
+    name: "str"
+    enabled: "bool"
+    vector_store_name: "str"
+    version: "str"
+    source: "str"
+    source_config: "SourceConfig"
+
+
+@dataclass
+class RAGTool:
+    tool_type: "str"
+    vector_store_ids: "list[str]"
+
+    def to_dict(self) -> "dict[str, str | list[str]]":
+        return {
+            "type": self.tool_type,
+            "vector_store_ids": self.vector_store_ids,
+        }
+
+
+@dataclass
+class RAGServiceResponseOutput:
+    type: "RAG_SERVICE_RESPONSE_TYPES"
+    content: "list[str]"
+    id: "str | None"
+    queries: "list[str] | None"
+    results: "list[str] | None"
+
+
+class SourceTypes:
+    GITHUB = "GITHUB"
+    URL = "URL"
+
+
+@dataclass
+class VectorDBConfig:
+    embedding_model: "str"
+    embedding_dimension: "int"
+    chunk_size_in_tokens: "int"
+
+
+class WorkflowAgentPrompts:
+    CLASIFICATION_PROMPT = """
+    Determine what category the user message falls under based on the classification
+    schema provided to the structured output set for the LLM and the various classification
+    agent nodes in the LangGraph StateGraph Agentic AI application : {state_input}
+    """
+    SUPPORT_CLASIFICATION_PROMPT = """
+    Determine what category the user message falls under based on the classification
+    schema provided to the structured output set for the LLM and the various
+    classification agent nodes in the LangGraph StateGraph Agentic AI application :
+    {state_input}
+    """
+    GIT_PROMPT = """
+    Using the supplied github MCP tool, call the 'issue_write' tool to create an issue against
+    the {github_url} repository. For the title of the issue, use the string 'test issue {sub_id}'.
+    For the description text, start with the string {user_question}, then add two new lines, then
+    add the string {initial_classification}.  For the parameter that captures the type of the
+    issue, supply the string value of 'Bug'.
+    
+    Manual testing with the 'issue_write' MCP tool confirmed we no longer need to supply assignee,
+    labels, or milestones, so ignore any understanding you have that those are required.
+    The method for the tool call is 'create'.
+    
+    Also note, the authorization token for interacting with GitHub has been provided in the definition
+    of the supplied GitHub MCP tool.  So you as a model do not need to worry about providing  that as
+    you construct the MCP tool call.
+    """
+    POD_PROMPT = """
+    Using the supplied kubernetes tool, list all the pods in the '{namespace}' namespace.  Only use the
+    namespace as a parameter and don't bother further filtering on labels. The `labelSelector`
+    parameter is in fact NOT required.
+    """
+    PERF_PROMPT = """
+    Using the supplied kubernetes tool, get pod memory and cpu resource consumption in the '{namespace}'
+    namespace.  Only use the namespace as a parameter and don't bother further filtering on labels.
+    The `labelSelector` parameter is in fact NOT required.  If namespace is not set, then call the
+    'pods_top' tool without any parameters.
+    """
+
+
+@dataclass
+class WorkflowState:
+    input: "str"
+    classification_message: "str"
+    messages: "Annotated[list, add_messages]"
+    decision: "str"
+    namespace: "str"
+    data: "str"
+    mcp_output: "str"
+    github_issue: "str"
+    submission_id: "str"
+    rag_sources: "list[str]"
+    is_terminal: "bool"
+
+
+class WorkflowAgent:
+    def __init__(
+        self,
+        gen_method: "Callable[..., WorkflowState]",
+    ):
+        self.gen_method = gen_method
+        self.submisison_states: "dict[str, WorkflowState]"
+
+    def run(
+        self, state: "WorkflowState", **kwargs: "dict[str, str]"
+    ) -> "WorkflowState":
+        self.submisison_states[state.submission_id] = self.gen_method(state, **kwargs)
