@@ -1,5 +1,6 @@
 from typing import Any
 
+from llama_stack_client import LlamaStackClient
 from openai import OpenAI
 
 from src.exceptions import AgentRunMethodParameterError
@@ -9,21 +10,23 @@ from src.utils import extract_mcp_output, logger
 
 
 def classification_agent(
-    state: "WorkflowState", **kwargs: "dict[str, Any]"
+    state: "WorkflowState",
+    openai_client: "OpenAI | None",
+    topic_llm: "str | None",
+    guardrail_model: "str | None",
 ) -> "WorkflowState":
 
     # check if necessary variables exist
-    openai_client: "OpenAI" = kwargs.get("openai_client")
     if openai_client is None:
         raise AgentRunMethodParameterError(
             "openai_client is required in classification agent"
         )
 
-    topic_llm = kwargs.get("topic_llm")
     if topic_llm is None:
-        raise AgentRunMethodParameterError("model is required in classification agent")
+        raise AgentRunMethodParameterError(
+            "topic_llm is required in classification agent"
+        )
 
-    guardrail_model = kwargs.get("guardrail_model")
     if guardrail_model is None:
         raise AgentRunMethodParameterError(
             "guardrail_model is required in classification agent"
@@ -31,7 +34,7 @@ def classification_agent(
 
     # checking if the input is safe
     safety_response = openai_client.moderations.create(
-        model=guardrail_model, input=state.input
+        model=guardrail_model, input=str(state["input"])
     )
 
     for moderation in safety_response.results:
@@ -40,114 +43,152 @@ def classification_agent(
 
         # TODO: decide log level
         logger.info(
-            f"Classification result: '{state.input}' is flagged as '{moderation}'"
+            f"Classification result: '{state["input"]}' is flagged as '{moderation}'"
         )
-        state.decision = "unsafe"
-        state.data = state.input
+        state["decision"] = "unsafe"
+        state["data"] = state["input"]
         flagged_categories = [
             key
             for key, value in moderation.categories.model_extra.items()
             if value is True
         ]
-        state.classification_message = f"Classification result: '{state.input}' is flagged for: {', '.join(flagged_categories)}"
+        state["classification_message"] = (
+            f"Classification result: '{state["input"]}' is flagged for: {', '.join(flagged_categories)}"
+        )
         return state
 
-    # NOTE: replaced langchain dependency with direct openai calls
-    response = openai_client.responses.parse(
-        model=topic_llm,
-        input=WorkflowAgentPrompts.CLASIFICATION_PROMPT.format(state_input=state.input),
-        text_format=ClassificationModel,
-    )
+    # Use LlamaStack's inference API with structured output
+    try:
+        completion = openai_client.inference.chat_completion(
+            model_id=topic_llm,
+            messages=[
+                {
+                    "role": "user",
+                    "content": WorkflowAgentPrompts.CLASIFICATION_PROMPT.format(
+                        state_input=state["input"]
+                    ),
+                }
+            ],
+            response_format=ClassificationModel,
+            stream=False,
+        )
 
-    # NOTE: Using OpenAI directly for a structured output.
-    # see https://platform.openai.com/docs/guides/structured-outputs#examples
+        # Check if response has parsed output
+        if not (
+            completion is not None
+            and hasattr(completion, "completion_message")
+            and hasattr(completion.completion_message, "tool_calls")
+        ):
+            logger.error("Failed to get structured response from the model.")
+            state["decision"] = "unknown"
+            state["data"] = state["input"]
+            state["classification_message"] = "Unable to determine request type."
+            return state
 
-    # check if parsed response has valid structure
-    if not (
-        response is not None
-        and response.output_parsed is not None
-        and (response.output_parsed.classification in ("legal", "support"))
-    ):
-        logger.error("Failed to get classification response from the model.")
-        state.decision = "unknown"
-        state.data = state.input
-        state.classification_message = "Unable to determine request type."
+        classification_result = completion.completion_message.parsed
+
+        # Validate classification
+        if not hasattr(classification_result, "classification") or classification_result.classification not in ("legal", "support"):
+            logger.error("Invalid or missing classification in response.")
+            state["decision"] = "unknown"
+            state["data"] = state["input"]
+            state["classification_message"] = "Unable to determine request type."
+            return state
+
+    except Exception as e:
+        logger.error(f"Classification failed: {e}")
+        state["decision"] = "unknown"
+        state["data"] = state["input"]
+        state["classification_message"] = f"Classification error: {str(e)[:100]}"
         return state
-
-    classification_result = response.output_parsed
     logger.info(
-        f"Classification result: {classification_result} for input '{state.input}'"
+        f"Classification result: {classification_result} for input '{state["input"]}'"
     )
 
-    state.decision = classification_result.classification
-    state.data = state.input
+    state["decision"] = classification_result.classification
+    state["data"] = state["input"]
 
     return state
 
 
 def support_classification_agent(
-    state: "WorkflowState", **kwargs: "dict[str, Any]"
+    state: "WorkflowState",
+    openai_client: "OpenAI | None",
+    topic_llm: "str | None",
 ) -> "WorkflowState":
+
     # check if necessary variables exist
-    openai_client: "OpenAI" = kwargs.get("openai_client")
     if openai_client is None:
         raise AgentRunMethodParameterError(
             "openai_client is required in support classification agent"
         )
 
-    topic_llm = kwargs.get("topic_llm")
     if topic_llm is None:
         raise AgentRunMethodParameterError(
             "model is required in support classification agent"
         )
 
-    # NOTE: replaced langchain dependency with direct openai calls
-    response = openai_client.responses.parse(
-        model=topic_llm,
-        input=WorkflowAgentPrompts.SUPPORT_CLASIFICATION_PROMPT.format(
-            state_input=state.input
-        ),
-        text_format=SupportClassificationModel,
-    )
-    classification_result = response.output_parsed
+    # Use LlamaStack's inference API with structured output
+    try:
+        completion = openai_client.inference.chat_completion(
+            model_id=topic_llm,
+            messages=[
+                {
+                    "role": "user",
+                    "content": WorkflowAgentPrompts.SUPPORT_CLASIFICATION_PROMPT.format(
+                        state_input=state["input"]
+                    ),
+                }
+            ],
+            response_format=SupportClassificationModel,
+            stream=False,
+        )
 
-    # TODO: check parsing errors
-    logger.info(
-        f"Support Classification result: {classification_result} for input '{state.input}'"
-        # f"and parsing error {parsing_error}"
-    )
-    state.namespace = classification_result.namespace
-    state.decision = (
+        classification_result = completion.completion_message.parsed
+
+        if not classification_result:
+            logger.error("Failed to get structured response from support classification.")
+            state["decision"] = "unknown"
+            state["namespace"] = ""
+            return state
+
+        logger.info(
+            f"Support Classification result: {classification_result} for input '{state["input"]}'"
+        )
+
+    except Exception as e:
+        logger.error(f"Support classification failed: {e}")
+        state["decision"] = "unknown"
+        state["namespace"] = ""
+        return state
+    state["namespace"] = classification_result.namespace
+    state["decision"] = (
         classification_result.classification
         if classification_result.performance in ("true", "performance issue")
         else "perf"
     )
-    state.data = state.input
-    # TODO: This should be moved to agent level
-    # sub_id = state["submissionID"]
-    # saved_state = submission_states.get(sub_id, {})
-    # state["classification_message"] = saved_state.get(
-    #     "classification_message", state.get("classification_message", "")
-    # )
-    # submission_states[sub_id] = state
+    state["data"] = state["input"]
     return state
 
 
-def git_agent(state: "WorkflowState", **kwargs: "dict[str, Any]") -> "WorkflowState":
-    logger.debug(f"git Agent request for submission: {state.submission_id}")
+def git_agent(
+    state: "WorkflowState",
+    openai_client: "OpenAI | None",
+    git_token: "str | None",
+    tools_llm: "str | None",
+    github_url: "str | None",
+) -> "WorkflowState":
+    logger.debug(f"git Agent request for submission: {state["submission_id"]}")
 
     # check if necessary variables exist
-    openai_client: "OpenAI" = kwargs.get("openai_client")
     if openai_client is None:
         raise AgentRunMethodParameterError(
             "openai_client is required in support git agent"
         )
 
-    git_token: "str" = kwargs.get("git_token")
     if not git_token:
         raise AgentRunMethodParameterError("git_token is required in git agent")
 
-    tools_llm: "str" = kwargs.get("tools_llm")
     if not tools_llm:
         raise AgentRunMethodParameterError("tools_llm is required in git agent")
 
@@ -164,17 +205,17 @@ def git_agent(state: "WorkflowState", **kwargs: "dict[str, Any]") -> "WorkflowSt
         resp = openai_client.responses.create(
             model=tools_llm,
             input=WorkflowAgentPrompts.GIT_PROMPT.format(
-                github_url=kwargs.get("github_url", "unknown"),
-                sub_id=state.submission_id,
-                user_question=state.input,
-                initial_classification=state.mcp_output,
+                github_url=github_url,
+                sub_id=state["submission_id"],
+                user_question=state["input"],
+                initial_classification=state["mcp_output"],
             ),
             tools=[openai_mcp_tool],
         )
         logger.debug("git_agent response returned")
 
         # Extract GitHub issue URL from MCP call output
-        state.github_issue = extract_mcp_output(
+        state["github_issue"] = extract_mcp_output(
             resp, agent_name="git_agent", extract_url=True
         )
     except Exception as e:
@@ -182,17 +223,19 @@ def git_agent(state: "WorkflowState", **kwargs: "dict[str, Any]") -> "WorkflowSt
     return state
 
 
-def pod_agent(state: "WorkflowState", **kwargs: "dict[str, Any]") -> "WorkflowState":
-    logger.info(f"K8S Agent request for submission: {state.submission_id}")
+def pod_agent(
+    state: "WorkflowState",
+    openai_client: "OpenAI | None",
+    tools_llm: "str | None",
+) -> "WorkflowState":
+    logger.info(f"K8S Agent request for submission: {state["submission_id"]}")
 
     # check if necessary variables exist
-    openai_client: "OpenAI" = kwargs.get("openai_client")
     if openai_client is None:
         raise AgentRunMethodParameterError(
             "openai_client is required in support git agent"
         )
 
-    tools_llm: "str" = kwargs.get("tools_llm")
     if not tools_llm:
         raise AgentRunMethodParameterError("tools_llm is required in git agent")
 
@@ -206,36 +249,38 @@ def pod_agent(state: "WorkflowState", **kwargs: "dict[str, Any]") -> "WorkflowSt
 
     try:
         logger.debug(
-            f"K8S Agent making MCP request for submission: {state.submission_id}"
+            f"K8S Agent making MCP request for submission: {state['submission_id']}"
         )
         resp = openai_client.responses.create(
             model=tools_llm,
-            input=WorkflowAgentPrompts.POD_PROMPT.format(namespace=state.namespace),
+            input=WorkflowAgentPrompts.POD_PROMPT.format(namespace=state["namespace"]),
             tools=[openai_mcp_tool],
         )
         logger.debug(
-            f"K8S Agent successful return MCP request for submission: {state.submission_id}"
+            f"K8S Agent successful return MCP request for submission: {state['submission_id']}"
         )
 
-        state.mcp_output = extract_mcp_output(resp, agent_name="pod_agent")
+        state["mcp_output"] = extract_mcp_output(resp, agent_name="pod_agent")
     except Exception as e:
         logger.info(
-            f"K8s Agent unsuccessful return MCP request for submission {state.submission_id} with error: '{e}'"
+            f"K8s Agent unsuccessful return MCP request for submission {state['submission_id']} with error: '{e}'"
         )
     return state
 
 
-def perf_agent(state: "WorkflowState", **kwargs: "dict[str]") -> "WorkflowState":
-    logger.info(f"K8S perf Agent request for submission: {state.submission_id}")
+def perf_agent(
+    state: "WorkflowState",
+    openai_client: "OpenAI | None",
+    tools_llm: "str | None",
+) -> "WorkflowState":
+    logger.info(f"K8S perf Agent request for submission: {state['submission_id']}")
 
     # check if necessary variables exist
-    openai_client: "OpenAI" = kwargs.get("openai_client")
     if openai_client is None:
         raise AgentRunMethodParameterError(
             "openai_client is required in support git agent"
         )
 
-    tools_llm: "str" = kwargs.get("tools_llm")
     if not tools_llm:
         raise AgentRunMethodParameterError("tools_llm is required in git agent")
 
@@ -248,20 +293,20 @@ def perf_agent(state: "WorkflowState", **kwargs: "dict[str]") -> "WorkflowState"
     }
     try:
         logger.debug(
-            f"K8S perf Agent making MCP request for submission: {state['submissionID']}"
+            f"K8S perf Agent making MCP request for submission: {state['submission_id']}"
         )
         resp = openai_client.responses.create(
             model=tools_llm,
-            input=WorkflowAgentPrompts.PERF_PROMPT.format(namespace=state.namespace),
+            input=WorkflowAgentPrompts.PERF_PROMPT.format(namespace=state["namespace"]),
             tools=[openai_mcp_tool],
         )
         logger.debug(
-            f"K8S perf Agent successful return MCP request for submission: {state['submissionID']}"
+            f"K8S perf Agent successful return MCP request for submission: {state['submission_id']}"
         )
 
-        state.mcp_output = extract_mcp_output(resp, agent_name="perf_agent")
+        state["mcp_output"] = extract_mcp_output(resp, agent_name="perf_agent")
     except Exception as e:
         logger.info(
-            f"K8s perf Agent unsuccessful return MCP request for submission {state['submissionID']} with error: '{e}'"
+            f"K8s perf Agent unsuccessful return MCP request for submission {state['submission_id']} with error: '{e}'"
         )
     return state

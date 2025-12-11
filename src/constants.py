@@ -34,7 +34,7 @@ DEFAULT_INGESTION_CONFIG = "config/ingestion_config.yaml"
 # for summarization responses.
 DEFAULT_INITIAL_CONTENT = """Summarize that the user query is classified as
 {department_display_name}, along with any answers provided by the LLM
-for the question, and include that we are responding to submissionID
+for the question, and include that we are responding to submission_id
 {state_sub_id}. Finally, mention a GitHub issue will be opened
 for follow up.
 """

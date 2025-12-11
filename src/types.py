@@ -1,19 +1,9 @@
 from dataclasses import dataclass
-from typing import Annotated, Callable, Literal
+from typing import Annotated, Callable, Literal, TypedDict
 
 from langgraph.graph.message import add_messages
 
 RAW_PIPELINES_TYPE = list[dict[str, str | bool | dict[str, str]]]
-
-RAG_SERVICE_RESPONSE_TYPES = Literal[
-    "message",
-    "web_search_call",
-    "file_search_call",
-    "function_call",
-    "mcp_call",
-    "mcp_list_tools",
-    "mcp_approval_request",
-]
 
 
 @dataclass
@@ -32,27 +22,6 @@ class Pipeline:
     version: "str"
     source: "str"
     source_config: "SourceConfig"
-
-
-@dataclass
-class RAGTool:
-    tool_type: "str"
-    vector_store_ids: "list[str]"
-
-    def to_dict(self) -> "dict[str, str | list[str]]":
-        return {
-            "type": self.tool_type,
-            "vector_store_ids": self.vector_store_ids,
-        }
-
-
-@dataclass
-class RAGServiceResponseOutput:
-    type: "RAG_SERVICE_RESPONSE_TYPES"
-    content: "list[str]"
-    id: "str | None"
-    queries: "list[str] | None"
-    results: "list[str] | None"
 
 
 class SourceTypes:
@@ -107,8 +76,7 @@ class WorkflowAgentPrompts:
     """
 
 
-@dataclass
-class WorkflowState:
+class WorkflowState(TypedDict):
     input: "str"
     classification_message: "str"
     messages: "Annotated[list, add_messages]"
@@ -118,19 +86,5 @@ class WorkflowState:
     mcp_output: "str"
     github_issue: "str"
     submission_id: "str"
-    rag_sources: "list[str]"
-    is_terminal: "bool"
-
-
-class WorkflowAgent:
-    def __init__(
-        self,
-        gen_method: "Callable[..., WorkflowState]",
-    ):
-        self.gen_method = gen_method
-        self.submisison_states: "dict[str, WorkflowState]"
-
-    def run(
-        self, state: "WorkflowState", **kwargs: "dict[str, str]"
-    ) -> "WorkflowState":
-        self.submisison_states[state.submission_id] = self.gen_method(state, **kwargs)
+    rag_sources: "list"
+    workflow_complete: "bool"

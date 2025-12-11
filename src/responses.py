@@ -120,7 +120,7 @@ class RAGService:
             return self.load_vector_stores()
         except Exception as e:
             logger.error(f"RAG Service: Failed to initialize: {e}")
-            return False
+        return False
 
     def map_to_category(self, category: "str", vs_name: "str", vs_id: "str") -> "None":
         """
@@ -131,7 +131,7 @@ class RAGService:
 
         if category not in self.vector_store_map:
             self.vector_store_map[category] = []
-        self.vector_store_map["legal"].append(vs_id)
+        self.vector_store_map[category].append(vs_id)
         logger.debug(f"RAG Service: Mapped '{vs_name}' -> '{category}'")
 
     def load_vector_stores(self) -> "bool":

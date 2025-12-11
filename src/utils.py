@@ -1,97 +1,16 @@
-import json
 import logging
 import os
-import re
-
-from llama_stack_client.types import ResponseObject
+import json
 from typing_extensions import Literal
+from llama_stack_client.types import ResponseObject
 
 from src.types import WorkflowState
-
-
-class ColoredFormatter(logging.Formatter):
-    """Custom formatter with colors for different log levels"""
-
-    RESET = "\033[0m"
-    GRAY = "\033[90m"
-    WHITE = "\033[97m"
-    YELLOW = "\033[93m"
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    BLUE = "\033[94m"
-    PURPLE = "\033[95m"
-
-    LEVEL_COLORS = {
-        logging.DEBUG: GRAY,
-        logging.INFO: WHITE,
-        logging.WARNING: YELLOW,
-        logging.ERROR: RED,
-        logging.CRITICAL: RED,
-    }
-
-    # regex to match file paths and URLs
-    PATH_PATTERN = re.compile(
-        r"(?:"
-        r"(?:https?://[^\s]+)|"
-        r"(?:[~/.]?[/\\][\w\-./\\]+)|"
-        r"(?:[A-Za-z]:[/\\][\w\-./\\]+)"
-        r")"
-    )
-
-    def format(self, record):
-        success_keywords = [
-            "success",
-            "✓",
-            "completed",
-            "ready",
-            "downloaded",
-            "inserted",
-            "created",
-            "processed",
-        ]
-        processing_keywords = [
-            "processing",
-            "fetching",
-            "starting",
-            "loading",
-            "initializing",
-            "waiting",
-        ]
-
-        message_lower = record.getMessage().lower()
-        is_success = any(keyword in message_lower for keyword in success_keywords)
-        is_processing = any(keyword in message_lower for keyword in processing_keywords)
-
-        if record.levelno == logging.INFO:
-            if is_success:
-                color = self.GREEN
-            elif is_processing:
-                color = self.BLUE
-            else:
-                color = self.WHITE
-        else:
-            color = self.LEVEL_COLORS.get(record.levelno, self.WHITE)
-
-        # Format the base message
-        log_fmt = f"{color}%(asctime)s: %(levelname)s - %(message)s{self.RESET}"
-        formatter = logging.Formatter(log_fmt)
-        formatted = formatter.format(record)
-
-        # Colorize paths in the message
-        formatted = self.PATH_PATTERN.sub(
-            lambda m: f"{self.PURPLE}{m.group()}{color}", formatted
-        )
-
-        return formatted + self.RESET
 
 
 log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
 log_level = getattr(logging, log_level_str, logging.INFO)
 
-handler = logging.StreamHandler()
-handler.setFormatter(ColoredFormatter())
-
-logging.basicConfig(level=log_level, handlers=[handler])
+logging.basicConfig(level=log_level)
 
 logger = logging.getLogger(__name__)
 
