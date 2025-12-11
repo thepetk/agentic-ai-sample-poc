@@ -57,10 +57,10 @@ def classification_agent(
         )
         return state
 
-    # Use LlamaStack's inference API with structured output
+    # Use OpenAI client for structured output with Pydantic models
     try:
-        completion = openai_client.inference.chat_completion(
-            model_id=topic_llm,
+        completion = openai_client.beta.chat.completions.parse(
+            model=topic_llm,
             messages=[
                 {
                     "role": "user",
@@ -70,14 +70,13 @@ def classification_agent(
                 }
             ],
             response_format=ClassificationModel,
-            stream=False,
         )
 
-        # Check if response has parsed output
-        if not (
-            completion is not None
-            and hasattr(completion, "completion_message")
-            and hasattr(completion.completion_message, "tool_calls")
+        classification_result = completion.choices[0].message.parsed
+
+        # Validate classification
+        if not classification_result or not hasattr(
+            classification_result, "classification"
         ):
             logger.error("Failed to get structured response from the model.")
             state["decision"] = "unknown"
@@ -85,11 +84,19 @@ def classification_agent(
             state["classification_message"] = "Unable to determine request type."
             return state
 
-        classification_result = completion.completion_message.parsed
-
-        # Validate classification
-        if not hasattr(classification_result, "classification") or classification_result.classification not in ("legal", "support"):
-            logger.error("Invalid or missing classification in response.")
+        if classification_result.classification not in (
+            "legal",
+            "techsupport",
+            "support",
+            "hr",
+            "sales",
+            "procurement",
+            "unsafe",
+            "unknown",
+        ):
+            logger.error(
+                f"Invalid classification: {classification_result.classification}"
+            )
             state["decision"] = "unknown"
             state["data"] = state["input"]
             state["classification_message"] = "Unable to determine request type."
@@ -128,10 +135,10 @@ def support_classification_agent(
             "model is required in support classification agent"
         )
 
-    # Use LlamaStack's inference API with structured output
+    # Use OpenAI client for structured output with Pydantic models
     try:
-        completion = openai_client.inference.chat_completion(
-            model_id=topic_llm,
+        completion = openai_client.beta.chat.completions.parse(
+            model=topic_llm,
             messages=[
                 {
                     "role": "user",
@@ -141,13 +148,14 @@ def support_classification_agent(
                 }
             ],
             response_format=SupportClassificationModel,
-            stream=False,
         )
 
-        classification_result = completion.completion_message.parsed
+        classification_result = completion.choices[0].message.parsed
 
         if not classification_result:
-            logger.error("Failed to get structured response from support classification.")
+            logger.error(
+                "Failed to get structured response from support classification."
+            )
             state["decision"] = "unknown"
             state["namespace"] = ""
             return state

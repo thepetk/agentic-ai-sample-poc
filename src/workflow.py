@@ -93,10 +93,11 @@ class Workflow:
             department_name: Internal name for the department (e.g., 'legal', 'support')
             department_display_name: Display name (e.g., 'Legal', 'Software Support')
             content_override: Optional content to override default prompt
-            custom_llm: LangChain LLM instance for standard inference
+            custom_llm: LLM model name for inference (e.g., 'ollama/llama3.2:3b')
             submission_states: Dictionary to store submission states
-            rag_service: Optional RAGService instance for RAG-enabled responses
-            rag_category: Category name to select appropriate vector stores (e.g., 'legal', 'support')
+            rag_category: Category name to select appropriate vector stores (e.g., 'legal', 'techsupport', 'hr', 'sales', 'procurement')
+            additional_prompt: Additional prompt instructions to append to the RAG prompt
+            is_terminal: Whether this agent marks the end of the workflow
         """
         if custom_llm is None:
             raise ValueError("custom_llm is required")
@@ -206,7 +207,7 @@ class Workflow:
 
     def make_workflow(
         self,
-        topic_llm: "str",
+        tools_llm: "str",
         git_token: "str | None" = None,
         guardrail_model: "str | None" = None,
         github_url: "str | None" = None,
@@ -214,8 +215,10 @@ class Workflow:
         """Create and configure the overall workflow with all agents and routing.
 
         Args:
-            topic_llm: LangChain LLM instance for classification and general inference
-            git_token: GitHub token for git agent MCP calls
+            tools_llm: LLM model name for classification, inference, and tool usage (e.g., 'ollama/llama3.2:3b')
+            git_token: GitHub personal access token for git agent MCP calls (optional)
+            guardrail_model: Model name for content moderation/safety checks (optional)
+            github_url: GitHub repository URL for creating issues (optional)
         """
         # TODO: What's the purpose of the lls_client this?
 
@@ -225,7 +228,7 @@ class Workflow:
         legal_agent = self.create_agent(
             "legal",
             "Legal",
-            custom_llm=topic_llm,
+            custom_llm=tools_llm,
             submission_states=submission_states,
             rag_category="legal",
             is_terminal=True,
@@ -233,16 +236,16 @@ class Workflow:
         support_agent = self.create_agent(
             "support",
             "Software Support",
-            custom_llm=topic_llm,
+            custom_llm=tools_llm,
             submission_states=submission_states,
-            rag_category="support",
+            rag_category="techsupport",
             is_terminal=False,
         )
 
         hr_agent = self.create_agent(
             department_name="hr",
             department_display_name="Human Resources",
-            custom_llm=topic_llm,
+            custom_llm=tools_llm,
             submission_states=submission_states,
             rag_category="hr",
             additional_prompt="""
@@ -259,7 +262,7 @@ class Workflow:
         sales_agent = self.create_agent(
             department_name="sales",
             department_display_name="Sales",
-            custom_llm=topic_llm,
+            custom_llm=tools_llm,
             submission_states=submission_states,
             rag_category="sales",
             additional_prompt="""
@@ -284,7 +287,7 @@ class Workflow:
         procurement_agent = self.create_agent(
             department_name="procurement",
             department_display_name="Procurement",
-            custom_llm=topic_llm,
+            custom_llm=tools_llm,
             submission_states=submission_states,
             rag_category="procurement",
             additional_prompt="""
@@ -303,21 +306,21 @@ class Workflow:
         def classification_node(state: "WorkflowState") -> "WorkflowState":
             return classification_agent(
                 state,
-                openai_client=self.rag_service.client,
-                topic_llm=topic_llm,
+                openai_client=self.rag_service.openai_client,
+                topic_llm=tools_llm,
                 guardrail_model=guardrail_model,
             )
 
         def support_classification_node(state: "WorkflowState") -> "WorkflowState":
             return support_classification_agent(
-                state, openai_client=self.rag_service.client, topic_llm=topic_llm
+                state, openai_client=self.rag_service.openai_client, topic_llm=tools_llm
             )
 
         def git_agent_node(state: "WorkflowState") -> "WorkflowState":
             return git_agent(
                 state,
                 openai_client=self.rag_service.client,
-                topic_llm=topic_llm,
+                tools_llm=tools_llm,
                 git_token=git_token,
                 github_url=github_url,
             )
@@ -326,12 +329,12 @@ class Workflow:
             return pod_agent(
                 state,
                 openai_client=self.rag_service.client,
-                topic_llm=topic_llm,
+                tools_llm=tools_llm,
             )
 
         def perf_agent_node(state: "WorkflowState") -> "WorkflowState":
             return perf_agent(
-                state, openai_client=self.rag_service.client, topic_llm=topic_llm
+                state, openai_client=self.rag_service.client, tools_llm=tools_llm
             )
 
         overall_workflow = StateGraph(WorkflowState)

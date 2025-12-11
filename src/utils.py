@@ -36,11 +36,17 @@ def clean_text(text: "str") -> "str":
 
 def route_to_next_node(
     state: "WorkflowState",
-) -> "Literal['legal_agent', 'support_agent', '__end__']":
+) -> "Literal['legal_agent', 'support_agent', 'hr_agent', 'sales_agent', 'procurement_agent', '__end__']":
     if state["decision"] == "legal":
         return "legal_agent"
-    elif state["decision"] == "support":
+    elif state["decision"] == "techsupport":
         return "support_agent"
+    elif state["decision"] == "hr":
+        return "hr_agent"
+    elif state["decision"] == "sales":
+        return "sales_agent"
+    elif state["decision"] == "procurement":
+        return "procurement_agent"
     else:
         return "__end__"
 

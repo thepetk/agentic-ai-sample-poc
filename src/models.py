@@ -5,8 +5,10 @@ from typing_extensions import Literal
 class ClassificationModel(BaseModel):
     """Analyze the message and route it according to its content."""
 
-    classification: Literal["legal", "support", "unsafe", "unknown"] = Field(
-        description="""The classification of the input: 'set to 'legal' if the input is a query related to legal, 'support' if related to software or technical support, or
+    classification: Literal[
+        "legal", "techsupport", "hr", "sales", "procurement", "unsafe", "unknown"
+    ] = Field(
+        description="""The classification of the input: 'set to 'legal' if the input is a query related to legal, 'support' if related to software or technical support, 'hr' if related to human resources, 'sales' if related to sales policies, 'procurement' if related to procurement policies, or
         'unsafe' if the input fails the moderation/safety check, and 'unknown' for everything else.
         Examples of legal questions that can be processed:
         - questions about various software licenses
@@ -24,6 +26,25 @@ class ClassificationModel(BaseModel):
         - troubleshooting issues with devices, drivers, or applications
         - syncing issues, file transfer problems, or connectivity questions
         - any technical how-to questions about products or systems
+        Examples of HR (Human Resources) questions that can be processed:
+        - questions about employee benefits, health care, vacation, PTO, retirement plans
+        - questions about workspaces, office facilities, work environment
+        - questions about company policies, employee handbook
+        - questions about bonuses, compensation, perks
+        - questions about participation requirements or workplace activities
+        Examples of sales questions that can be processed:
+        - questions about sales territories, lead assignments
+        - questions about discounting, deal approval, quotas
+        - questions about sales compensation, CRM systems
+        - questions about brand guidelines, communications
+        - questions about sales expenses, escalations, performance metrics
+        - questions about sales compliance and policies
+        Examples of procurement questions that can be processed:
+        - questions about competitive bidding, vendor evaluation
+        - questions about procurement ethics and transparency
+        - questions about spending limits and approval processes
+        - questions about procurement review procedures
+        - questions about vendor categorization
         """,
     )
 

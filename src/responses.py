@@ -7,6 +7,7 @@ from llama_stack_client.types import ResponseObject
 from llama_stack_client.types.response_list_response import (
     OutputOpenAIResponseOutputMessageFileSearchToolCallResult as FileSearchToolCallResult,
 )
+from openai import OpenAI
 
 from src.constants import (
     DEFAULT_INGESTION_CONFIG_PATHS,
@@ -32,6 +33,7 @@ class RAGService:
     ) -> "None":
         self.llama_stack_url = llama_stack_url
         self.client: "LlamaStackClient | None" = None
+        self.openai_client: "OpenAI | None" = None
         self.vector_store_map: "dict[str, list[str]]" = {}
         self.all_vector_store_ids: "list[str]" = []
 
@@ -117,6 +119,15 @@ class RAGService:
             self.client = LlamaStackClient(base_url=self.llama_stack_url)
             self.client.models.list()
             logger.info("RAG Service: Llama Stack client initialized successfully")
+
+            # Initialize OpenAI client for structured output (points to LlamaStack's OpenAI-compatible endpoint)
+            openai_base_url = f"{self.llama_stack_url}/v1"
+            self.openai_client = OpenAI(
+                base_url=openai_base_url,
+                api_key="not-needed"  # LlamaStack doesn't require API key
+            )
+            logger.info(f"RAG Service: OpenAI client initialized (base_url={openai_base_url})")
+
             return self.load_vector_stores()
         except Exception as e:
             logger.error(f"RAG Service: Failed to initialize: {e}")

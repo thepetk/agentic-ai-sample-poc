@@ -65,7 +65,7 @@ def initialize_workflow(_pipelines: "list[Pipeline]") -> "tuple[Any, RAGService]
     # create Workflow instance and compile it
     workflow_builder = Workflow(rag_service=rag_service)
     compiled_workflow = workflow_builder.make_workflow(
-        topic_llm=INFERENCE_MODEL,
+        tools_llm=INFERENCE_MODEL,
         git_token=GIT_TOKEN,
         github_url=GITHUB_URL,
         guardrail_model=GUARDRAIL_MODEL,
@@ -236,7 +236,7 @@ async def run_workflow_task(
         logger.info(f"Starting workflow task for submission {submission_id}")
 
         # Execute workflow using asyncio.to_thread to avoid blocking
-        await asyncio.to_thread(
+        result = await asyncio.to_thread(
             workflow.invoke,
             {
                 "input": question,
@@ -252,7 +252,10 @@ async def run_workflow_task(
                 "classification_message": "",
             },
         )
-        logger.info(f"Workflow task completed for submission {submission_id}")
+
+        # Update submission_states with the final workflow result
+        submission_states[submission_id] = result
+        logger.info(f"Workflow task completed for submission {submission_id}: decision={result.get('decision')}, complete={result.get('workflow_complete')}")
     except Exception as e:
         logger.error(f"Workflow task failed for submission {submission_id}: {e}")
         submission_states[submission_id] = {
