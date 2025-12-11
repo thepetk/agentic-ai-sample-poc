@@ -4,7 +4,18 @@ version = "0.1.0"
 description = "Agentic AI Sample Proof of Concept"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "docling>=2.63.0",
+    "llama-stack-client>=0.3.1",
+    "llama-stack>=0.3.1",
+    "pygithub>=2.8.1",
+    "pyyaml>=6.0.3",
+    "langgraph>=1.0.4",
+    "ollama>=0.6.1",
+    "pymilvus[milvus_lite]>=2.6.5",
+    "mcp>=1.23.1",
+    "chardet>=5.2.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
