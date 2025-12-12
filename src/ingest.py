@@ -416,6 +416,7 @@ class IngestionService:
 
         logger.info(f"Creating vector database: {vector_store_name}")
 
+        vector_store = None
         try:
             vector_store = self.client.vector_stores.create(name=vector_store_name)
             self.vector_store_ids.append(vector_store.id)
@@ -425,6 +426,18 @@ class IngestionService:
                 logger.info(
                     f"Vector DB '{vector_store_name}' already exists, continuing..."
                 )
+
+                vector_stores = self.client.vector_stores.list() or []
+                for vs in vector_stores:
+                    if vs.name == vector_store_name:
+                        vector_store = vs
+                        break
+
+                if vector_store is None:
+                    logger.error(
+                        f"Could not find existing vector store '{vector_store_name}'"
+                    )
+                    return False
             else:
                 logger.error(f"Failed to register vector DB '{vector_store_name}': {e}")
                 return False

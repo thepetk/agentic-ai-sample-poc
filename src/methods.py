@@ -51,6 +51,7 @@ def classification_agent(
         )
         state["decision"] = "unsafe"
         state["data"] = state["input"]
+        state["workflow_complete"] = True
         flagged_categories = [
             key
             for key, value in moderation.categories.model_extra.items()
@@ -87,6 +88,7 @@ def classification_agent(
             logger.error("Failed to get structured response from the model.")
             state["decision"] = "unknown"
             state["data"] = state["input"]
+            state["workflow_complete"] = True
             state["classification_message"] = "Unable to determine request type."
             return state
 
@@ -105,6 +107,7 @@ def classification_agent(
             )
             state["decision"] = "unknown"
             state["data"] = state["input"]
+            state["workflow_complete"] = True
             state["classification_message"] = "Unable to determine request type."
             return state
 
@@ -112,6 +115,7 @@ def classification_agent(
         logger.error(f"Classification failed: {e}")
         state["decision"] = "unknown"
         state["data"] = state["input"]
+        state["workflow_complete"] = True
         state["classification_message"] = f"Classification error: {str(e)[:100]}"
         return state
     logger.info(
@@ -184,11 +188,10 @@ def support_classification_agent(
         state["namespace"] = ""
         return state
     state["namespace"] = classification_result.namespace
-    state["decision"] = (
-        classification_result.classification
-        if classification_result.performance in ("true", "performance issue")
-        else "perf"
-    )
+    if classification_result.performance == "performance issue":
+        state["decision"] = "perf"
+    else:
+        state["decision"] = classification_result.classification
     state["data"] = state["input"]
 
     agent_end_time = time.time()
@@ -343,6 +346,7 @@ def perf_agent(
         "require_approval": "never",
         "allowed_tools": ["pods_top"],
     }
+
     try:
         logger.debug(
             f"K8S perf Agent making MCP request "

@@ -542,7 +542,7 @@ def main():
                     format_func=lambda x: (
                         f"{x[:8]}... - {
                             submission_states.get(x, {}).get('input', 'Unknown')[:50]
-                        }",
+                        }"
                     ),
                 )
 

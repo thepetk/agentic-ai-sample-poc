@@ -51,8 +51,9 @@ class RAGService:
                     ingestion_config_path = path
                     break
 
-        if ingestion_config_path and os.path.exists(ingestion_config_path):
-            self.source_url_map = self._load_source_url_map(pipelines)
+        # Always load source URL map from pipelines if provided
+        if pipelines:
+            self._load_source_url_map(pipelines)
 
         # load file metadata if available
         if file_metadata_path is None:
@@ -82,7 +83,6 @@ class RAGService:
         """
         loads pipelines to map vector stores to source URLs.
         """
-        source_url_map: "dict[str, str]" = {}
         for pipeline in pipelines:
             if not pipeline.enabled:
                 continue
@@ -108,11 +108,11 @@ class RAGService:
                         f"to source URL: {base_url}"
                     )
 
-            logger.info(
-                f"RAG Service: Loaded source mappings for "
-                f"{len(self.source_url_map)} categories"
-            )
-        return source_url_map
+        logger.info(
+            f"RAG Service: Loaded source mappings for "
+            f"{len(self.source_url_map)} categories"
+        )
+        return self.source_url_map
 
     def initialize(self) -> "bool":
         """
@@ -250,7 +250,7 @@ class RAGService:
 
         for output_item in rag_response.output:
             if not (
-                not hasattr(output_item, "type")
+                hasattr(output_item, "type")
                 and output_item.type == "file_search_call"
             ):
                 continue
@@ -262,12 +262,14 @@ class RAGService:
                 snippet = None
                 file_id = self._get_file_id(result)
 
-                if hasattr(result, "text"):
-                    text = result.text
+                if hasattr(result, "text") and result.text:
+                    text = str(result.text)
                     snippet = text[:200] + "..." if len(text) > 200 else text
                 elif isinstance(result, dict) and result.get("text"):
-                    text = result.get("text", "")
+                    text = str(result.get("text", ""))
                     snippet = text[:200] + "..." if len(text) > 200 else text
+                else:
+                    snippet = None
 
                 if not (file_id and file_id not in seen_files):
                     continue
