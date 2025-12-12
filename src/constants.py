@@ -24,7 +24,7 @@ DEFAULT_HTTP_REQUEST_TIMEOUT = 60
 
 # DEFAULT_INFERENCE_MODEL: The default inference model
 # used by the RAGService.
-DEFAULT_INFERENCE_MODEL = "ollama/llama3.2:3b"
+DEFAULT_INFERENCE_MODEL = "vllm/qwen3-8b-fp8"
 
 # DEFAULT_INGESTION_CONFIG: The default path to the ingestion
 # configuration file.
