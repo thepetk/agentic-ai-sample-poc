@@ -15,10 +15,9 @@ ruff: ## Run ruff for formatting and linting
 ty: ## Run type check with ty
 	uvx ty check
 
-# TODO: enable tests when available
-# .PHONY: test
-# test: ## Run tests with pytest
-# 	uv run pytest
+.PHONY: test
+test: ## Run tests with pytest
+	uv run pytest
 
 .PHONY: pre-commit-install
 pre-commit-install: ## Install pre-commit hooks
