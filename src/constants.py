@@ -32,7 +32,7 @@ DEFAULT_MCP_TOOL_MODEL = "vllm/qwen3-8b-fp8"
 
 # DEFAULT_INGESTION_CONFIG: The default path to the ingestion
 # configuration file.
-DEFAULT_INGESTION_CONFIG = "config/ingestion_config.yaml"
+DEFAULT_INGESTION_CONFIG = "config/ingestion-config.yaml"
 
 # RAG_PROMPT_TEMPLATE: The prompt template used for
 # retrieval-augmented generation (RAG) responses.
