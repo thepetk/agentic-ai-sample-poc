@@ -3,7 +3,7 @@ from typing import Annotated, TypedDict
 
 from langgraph.graph.message import add_messages
 
-RAW_PIPELINES_TYPE = list[dict[str, str | bool | dict[str, str]]]
+RAW_PIPELINES_TYPE = dict[str, dict[str, str | bool | dict[str, str]]]
 
 
 @dataclass
@@ -104,3 +104,6 @@ class WorkflowState(TypedDict):
     submission_id: "str"
     rag_sources: "list"
     workflow_complete: "bool"
+    agent_timings: "dict[str, float]"
+    rag_query_time: "float"
+    active_agent: "str"

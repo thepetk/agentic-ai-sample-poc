@@ -1,12 +1,15 @@
 import os
+import time
 from typing import Any
 
 from langgraph.graph import START, StateGraph
 
 from src.constants import (
     DEFAULT_INFERENCE_MODEL,
-    DEFAULT_INITIAL_CONTENT,
     DEFAULT_LLAMA_STACK_URL,
+    DEFAULT_NON_TERMINAL_AGENT_INITIAL_CONTENT,
+    DEFAULT_TERMINAL_AGENT_INITIAL_CONTENT,
+    NO_DOCS_INDICATORS,
     RAG_PROMPT_TEMPLATE,
 )
 from src.methods import (
@@ -83,7 +86,7 @@ class Workflow:
         rag_category: "str | None" = None,
         additional_prompt: "str" = "",
         is_terminal: "bool" = False,
-    ) -> "WorkflowState":
+    ) -> "dict[str, str]":
         """
         factory function to create department-specific agents with consistent structure.
 
@@ -111,14 +114,29 @@ class Workflow:
             if content_override:
                 content = content_override
             else:
-                content = DEFAULT_INITIAL_CONTENT.format(
-                    department_display_name=department_display_name.lower(),
-                    state_sub_id=state["submission_id"],
+                user_query = state.get("input", "")
+                content = (
+                    DEFAULT_TERMINAL_AGENT_INITIAL_CONTENT
+                    if is_terminal
+                    else DEFAULT_NON_TERMINAL_AGENT_INITIAL_CONTENT
+                ).format(
+                    department_display_name=department_display_name,
+                    submission_id=state["submission_id"],
+                    user_query=user_query,
                 )
+
             return {"messages": [{"role": "user", "content": content}]}
 
         def llm_node(state: "WorkflowState") -> "WorkflowState":
             logger.debug(f"{department_display_name} LLM node processing")
+
+            agent_start_time = time.time()
+            if "agent_timings" not in state or state["agent_timings"] is None:
+                state["agent_timings"] = {}
+            if "rag_query_time" not in state:
+                state["rag_query_time"] = 0.0
+
+            state["active_agent"] = department_display_name
 
             # check if RAG is available for this department
             use_rag = (
@@ -156,11 +174,14 @@ class Workflow:
                     logger.info(
                         f"{department_display_name}: Making RAG-enabled response call"
                     )
+                    rag_start_time = time.time()
                     rag_response = self.rag_service.client.responses.create(
                         model=INFERENCE_MODEL,
                         input=rag_prompt,
                         tools=[file_search_tool],
                     )
+                    rag_end_time = time.time()
+                    state["rag_query_time"] = rag_end_time - rag_start_time
 
                     response_text = extract_rag_response_text(rag_response)
                     sources = self.rag_service.extract_sources_from_response(
@@ -173,6 +194,23 @@ class Workflow:
                             "source documents"
                         )
 
+                    rag_sources_useful = True
+                    if response_text and sources:
+                        response_lower = response_text.lower()
+                        for indicator in NO_DOCS_INDICATORS:
+                            if indicator in response_lower:
+                                rag_sources_useful = False
+                                logger.info(
+                                    f"{department_display_name}: "
+                                    f"Response indicates irrelevant docs ('{indicator}')"
+                                    ", hiding sources"
+                                )
+                                break
+
+                    state["rag_sources"] = (
+                        sources if rag_sources_useful and sources else []
+                    )
+
                     if response_text:
                         cm = response_text
                         logger.info(
@@ -184,7 +222,7 @@ class Workflow:
                             "falling back to standard LLM"
                         )
                         cm = self._call_openai_llm(state)
-
+                        state["rag_sources"] = []
                 except Exception as e:
                     logger.error(
                         f"{department_display_name}: RAG call failed: {e}, "
@@ -198,6 +236,11 @@ class Workflow:
             state["classification_message"] = cm
             if is_terminal:
                 state["workflow_complete"] = True
+
+            agent_end_time = time.time()
+            state["agent_timings"][department_display_name] = (
+                agent_end_time - agent_start_time
+            )
 
             return state
 
@@ -227,8 +270,6 @@ class Workflow:
             guardrail_model: Model name for content moderation/safety checks (optional)
             github_url: GitHub repository URL for creating issues (optional)
         """
-        # TODO: What's the purpose of the lls_client this?
-
         # Create all department agents using the factory function
         # RAG is enabled for legal and support agents using their
         # respective vector stores

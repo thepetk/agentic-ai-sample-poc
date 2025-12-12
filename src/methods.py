@@ -1,3 +1,5 @@
+import time
+
 from openai import OpenAI
 
 from src.exceptions import AgentRunMethodParameterError
@@ -12,6 +14,12 @@ def classification_agent(
     topic_llm: "str | None",
     guardrail_model: "str | None",
 ) -> "WorkflowState":
+
+    agent_start_time = time.time()
+    if "agent_timings" not in state or state["agent_timings"] is None:
+        state["agent_timings"] = {}
+    state["active_agent"] = "Classification"
+
     # check if necessary variables exist
     if openai_client is None:
         raise AgentRunMethodParameterError(
@@ -113,6 +121,9 @@ def classification_agent(
     state["decision"] = classification_result.classification
     state["data"] = state["input"]
 
+    agent_end_time = time.time()
+    state["agent_timings"]["Classification"] = agent_end_time - agent_start_time
+
     return state
 
 
@@ -121,6 +132,12 @@ def support_classification_agent(
     openai_client: "OpenAI | None",
     topic_llm: "str | None",
 ) -> "WorkflowState":
+
+    agent_start_time = time.time()
+    if "agent_timings" not in state or state["agent_timings"] is None:
+        state["agent_timings"] = {}
+    state["active_agent"] = "Support Classification"
+
     # check if necessary variables exist
     if openai_client is None:
         raise AgentRunMethodParameterError(
@@ -132,7 +149,6 @@ def support_classification_agent(
             "model is required in support classification agent"
         )
 
-    # Use OpenAI client for structured output with Pydantic models
     try:
         completion = openai_client.beta.chat.completions.parse(
             model=topic_llm,
@@ -174,6 +190,10 @@ def support_classification_agent(
         else "perf"
     )
     state["data"] = state["input"]
+
+    agent_end_time = time.time()
+    state["agent_timings"]["Support Classification"] = agent_end_time - agent_start_time
+
     return state
 
 
@@ -185,6 +205,11 @@ def git_agent(
     github_url: "str | None",
 ) -> "WorkflowState":
     logger.debug(f"git Agent request for submission: {state['submission_id']}")
+
+    agent_start_time = time.time()
+    if "agent_timings" not in state or state["agent_timings"] is None:
+        state["agent_timings"] = {}
+    state["active_agent"] = "Git"
 
     # check if necessary variables exist
     if openai_client is None:
@@ -226,6 +251,10 @@ def git_agent(
         )
     except Exception as e:
         logger.info(f"git_agent Tool failed with error: '{e}'")
+
+    agent_end_time = time.time()
+    state["agent_timings"]["Git"] = agent_end_time - agent_start_time
+
     return state
 
 
@@ -235,6 +264,11 @@ def pod_agent(
     tools_llm: "str | None",
 ) -> "WorkflowState":
     logger.info(f"K8S Agent request for submission: {state['submission_id']}")
+
+    agent_start_time = time.time()
+    if "agent_timings" not in state or state["agent_timings"] is None:
+        state["agent_timings"] = {}
+    state["active_agent"] = "Pod"
 
     # check if necessary variables exist
     if openai_client is None:
@@ -273,6 +307,10 @@ def pod_agent(
             f"K8s Agent unsuccessful return MCP request "
             f"for submission {state['submission_id']} with error: '{e}'"
         )
+
+    agent_end_time = time.time()
+    state["agent_timings"]["Pod"] = agent_end_time - agent_start_time
+
     return state
 
 
@@ -282,6 +320,11 @@ def perf_agent(
     tools_llm: "str | None",
 ) -> "WorkflowState":
     logger.info(f"K8S perf Agent request for submission: {state['submission_id']}")
+
+    agent_start_time = time.time()
+    if "agent_timings" not in state or state["agent_timings"] is None:
+        state["agent_timings"] = {}
+    state["active_agent"] = "Performance"
 
     # check if necessary variables exist
     if openai_client is None:
@@ -320,4 +363,8 @@ def perf_agent(
             f"K8s perf Agent unsuccessful return MCP request "
             f"for submission {state['submission_id']} with error: '{e}'"
         )
+
+    agent_end_time = time.time()
+    state["agent_timings"]["Performance"] = agent_end_time - agent_start_time
+
     return state

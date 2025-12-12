@@ -252,6 +252,9 @@ async def run_workflow_task(
                 "rag_sources": [],
                 "workflow_complete": False,
                 "classification_message": "",
+                "agent_timings": {},
+                "rag_query_time": 0.0,
+                "active_agent": "",
             },
         )
 
@@ -276,6 +279,9 @@ async def run_workflow_task(
             "messages": [],
             "namespace": "",
             "data": "",
+            "agent_timings": {},
+            "rag_query_time": 0.0,
+            "active_agent": "",
         }
 
 
@@ -504,6 +510,9 @@ def main():
                         "messages": [],
                         "namespace": "",
                         "data": "",
+                        "agent_timings": {},
+                        "rag_query_time": 0.0,
+                        "active_agent": "",
                     }
 
                     submit_workflow_task(workflow, question, submission_id)
@@ -593,8 +602,41 @@ def display_submission_details(submission_id: "str") -> "None":
     with st.expander("📝 Input Question", expanded=True):
         st.write(state.get("input", "N/A"))
 
+    # Display timing information
+    agent_timings = state.get("agent_timings", {})
+    rag_query_time = state.get("rag_query_time", 0.0)
+
+    if agent_timings or rag_query_time > 0:
+        with st.expander("⏱️ Response Times", expanded=True):
+            if agent_timings:
+                st.markdown("**Agent Processing Times:**")
+                for agent_name, duration in agent_timings.items():
+                    st.metric(
+                        label=f"{agent_name} Agent",
+                        value=f"{duration:.2f}s",
+                    )
+
+            if rag_query_time > 0:
+                st.markdown("**Vector Store Query Time:**")
+                st.metric(
+                    label="RAG Query",
+                    value=f"{rag_query_time:.2f}s",
+                )
+
+            # Calculate and display total time
+            total_agent_time = sum(agent_timings.values()) if agent_timings else 0
+            if total_agent_time > 0:
+                st.markdown("**Total Processing Time:**")
+                st.metric(
+                    label="Total",
+                    value=f"{total_agent_time:.2f}s",
+                )
+
     if state.get("classification_message"):
-        with st.expander("🔍 Classification Result", expanded=True):
+        with st.expander("🔍 Response", expanded=True):
+            active_agent = state.get("active_agent", "")
+            if active_agent:
+                st.markdown(f"**Handled by:** {active_agent} Department")
             st.write(state["classification_message"])
 
     rag_sources = state.get("rag_sources", [])
