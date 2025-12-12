@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -498,6 +499,26 @@ class IngestionService:
 
             return self.create_vector_db(vector_store_name, documents)
 
+    def save_file_metadata(
+        self, output_path: "str" = "rag_file_metadata.json"
+    ) -> "None":
+        """
+        saves file metadata mapping to JSON for use by RAG service.
+        """
+        if not self.file_metadata:
+            logger.warning("No file metadata to save")
+            return
+
+        try:
+            with open(output_path, "w") as f:
+                json.dump(self.file_metadata, f, indent=2)
+            logger.info(
+                f"Saved file metadata for {len(self.file_metadata)} "
+                f"files to {output_path}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to save file metadata: {e}")
+
     def run(self) -> "None":
         """
         runs the ingestion service.
@@ -539,3 +560,6 @@ class IngestionService:
             logger.warning(f"{failed} pipeline(s) failed. Check logs for details.")
         else:
             logger.info("All pipelines completed successfully!")
+
+        # Save file metadata for RAG source references
+        self.save_file_metadata()
