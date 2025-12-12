@@ -238,8 +238,9 @@ async def run_workflow_task(
         logger.info(f"Starting workflow task for submission {submission_id}")
 
         # Execute workflow using asyncio.to_thread to avoid blocking
+        # Type ignore: Compiled workflow has invoke method
         result = await asyncio.to_thread(
-            workflow.invoke,
+            workflow.invoke,  # type: ignore[attr-defined]
             {
                 "input": question,
                 "submission_id": submission_id,
@@ -259,7 +260,8 @@ async def run_workflow_task(
         )
 
         # Update submission_states with the final workflow result
-        submission_states[submission_id] = result
+        # Type ignore: result is compatible with WorkflowState
+        submission_states[submission_id] = result  # type: ignore[assignment]
         logger.info(
             f"Workflow task completed for submission {submission_id}: "
             f"decision={result.get('decision')}, "
@@ -498,7 +500,8 @@ def main():
                         st.session_state.active_submissions = []
                     st.session_state.active_submissions.insert(0, submission_id)
 
-                    submission_states[submission_id] = {
+                    # Type ignore: dict is compatible with WorkflowState
+                    submission_states[submission_id] = {  # type: ignore[assignment]
                         "input": question,
                         "submission_id": submission_id,
                         "decision": "",
@@ -645,9 +648,9 @@ def display_submission_details(submission_id: "str") -> "None":
             f"📚 RAG Sources ({len(rag_sources)} documents)", expanded=False
         ):
             for i, source in enumerate(rag_sources, 1):
-                filename = source.get('filename', source.get('file_name', 'Unknown'))
-                github_url = source.get('url', '')
-                snippet = source.get('snippet', '')
+                filename = source.get("filename", source.get("file_name", "Unknown"))
+                github_url = source.get("url", "")
+                snippet = source.get("snippet", "")
 
                 if github_url:
                     st.markdown(f"**{i}.** [{filename}]({github_url})")

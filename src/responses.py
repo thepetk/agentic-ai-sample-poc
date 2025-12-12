@@ -250,8 +250,7 @@ class RAGService:
 
         for output_item in rag_response.output:
             if not (
-                hasattr(output_item, "type")
-                and output_item.type == "file_search_call"
+                hasattr(output_item, "type") and output_item.type == "file_search_call"
             ):
                 continue
 

@@ -137,7 +137,11 @@ def extract_mcp_output(
 
         else:
             content_attr = getattr(item, "content", None)
-            if content_attr and isinstance(content_attr, list) and len(content_attr) > 0:
+            if (
+                content_attr
+                and isinstance(content_attr, list)
+                and len(content_attr) > 0
+            ):
                 first_content = content_attr[0]
                 text_value = getattr(first_content, "text", None)
                 if text_value:

@@ -1,9 +1,10 @@
 import os
 import time
 from typing import Any, cast
-from llama_stack_client.types import ResponseObject
 
 from langgraph.graph import START, StateGraph
+from llama_stack_client.types import ResponseObject
+from openai import OpenAI
 
 from src.constants import (
     DEFAULT_INFERENCE_MODEL,
@@ -68,14 +69,14 @@ class Workflow:
 
     def _call_openai_llm(self, state: "WorkflowState") -> "str":
         """Call OpenAI chat completions API"""
-        if not self.rag_service.client:
+        if not self.rag_service or not self.rag_service.client:
             raise ValueError("OpenAI client not initialized")
 
         messages = self._convert_messages_to_openai_format(state)
         completion = self.rag_service.client.chat.completions.create(
             model=INFERENCE_MODEL, messages=messages
         )
-        return completion.choices[0].message.content
+        return completion.choices[0].message.content or ""
 
     def create_agent(
         self,
@@ -163,7 +164,12 @@ class Workflow:
                     )
                     use_rag = False
 
-            if use_rag and file_search_tool:
+            if (
+                use_rag
+                and file_search_tool
+                and self.rag_service
+                and self.rag_service.client
+            ):
                 # Use RAG with file_search tool
                 try:
                     rag_prompt = self.rag_prompt.format(
@@ -178,6 +184,8 @@ class Workflow:
                         f"{department_display_name}: Making RAG-enabled response call"
                     )
                     rag_start_time = time.time()
+                    # self.rag_service and self.rag_service.client
+                    # are guaranteed to be not None here
                     rag_response = self.rag_service.client.responses.create(
                         model=INFERENCE_MODEL,
                         input=rag_prompt,
@@ -187,7 +195,12 @@ class Workflow:
                     state["rag_query_time"] = rag_end_time - rag_start_time
 
                     response_text = extract_rag_response_text(rag_response)
-                    rag_response_obj: "ResponseObject" = cast(ResponseObject, rag_response)  # type: ignore[arg-type]
+                    from llama_stack_client.types import ResponseObject
+
+                    rag_response_obj: "ResponseObject" = cast(
+                        ResponseObject, rag_response
+                    )  # type: ignore[arg-type]
+                    # self.rag_service is guaranteed to be not None here
                     if rag_category:
                         sources = self.rag_service.extract_sources_from_response(
                             rag_response_obj, rag_category
@@ -209,8 +222,8 @@ class Workflow:
                                 rag_sources_useful = False
                                 logger.info(
                                     f"{department_display_name}: "
-                                    f"Response indicates irrelevant docs ('{indicator}')"
-                                    ", hiding sources"
+                                    f"Response indicates irrelevant docs"
+                                    " ('{indicator}'):, hiding sources"
                                 )
                                 break
 
@@ -365,6 +378,8 @@ class Workflow:
         )
 
         def classification_node(state: "WorkflowState") -> "WorkflowState":
+            if not self.rag_service or not self.rag_service.openai_client:
+                raise ValueError("RAG service or OpenAI client not initialized")
             return classification_agent(
                 state,
                 openai_client=self.rag_service.openai_client,
@@ -373,6 +388,8 @@ class Workflow:
             )
 
         def support_classification_node(state: "WorkflowState") -> "WorkflowState":
+            if not self.rag_service or not self.rag_service.openai_client:
+                raise ValueError("RAG service or OpenAI client not initialized")
             return support_classification_agent(
                 state, openai_client=self.rag_service.openai_client, topic_llm=tools_llm
             )
@@ -394,8 +411,11 @@ class Workflow:
             )
 
         def perf_agent_node(state: "WorkflowState") -> "WorkflowState":
+            # Type ignore: LlamaStackClient is compatible with OpenAI
             return perf_agent(
-                state, openai_client=cast("OpenAI | None", self.rag_service.client), tools_llm=tools_llm  # type: ignore[arg-type]
+                state,
+                openai_client=cast("OpenAI | None", self.rag_service.client),  # type: ignore[arg-type]
+                tools_llm=tools_llm,
             )
 
         overall_workflow = StateGraph(WorkflowState)  # type: ignore[arg-type]

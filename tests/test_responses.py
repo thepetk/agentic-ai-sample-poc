@@ -1,8 +1,6 @@
 import os
 from unittest.mock import Mock, patch
 
-import pytest
-
 from src.responses import RAGService
 from src.types import Pipeline, SourceConfig, SourceTypes
 

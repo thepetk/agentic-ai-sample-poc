@@ -4,7 +4,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import requests
 import yaml
@@ -111,10 +111,16 @@ class IngestionService:
                         f"Pipeline '{p_title}' has invalid config: expected dict"
                     )
                     continue
+                url_value = config.get("url", "")
+                url_str = url_value if isinstance(url_value, str) else ""
+                branch_value = config.get("branch", "main")
+                branch_str = branch_value if isinstance(branch_value, str) else "main"
+                path_value = config.get("path", "")
+                path_str = path_value if isinstance(path_value, str) else ""
                 source_config = SourceConfig(
-                    url=config.get("url", "") if isinstance(config.get("url"), str) else "",
-                    branch=config.get("branch", "main") if isinstance(config.get("branch"), str) else "main",
-                    path=config.get("path", "") if isinstance(config.get("path"), str) else "",
+                    url=url_str,
+                    branch=branch_str,
+                    path=path_str,
                     urls=None,
                 )
             elif _pipeline_config["source"] == SourceTypes.URL:
@@ -136,7 +142,11 @@ class IngestionService:
                 continue
 
             enabled_value = _pipeline_config.get("enabled", False)
-            enabled_bool = bool(enabled_value) if not isinstance(enabled_value, bool) else enabled_value
+            enabled_bool = (
+                bool(enabled_value)
+                if not isinstance(enabled_value, bool)
+                else enabled_value
+            )
 
             source_value = _pipeline_config.get("source")
             if not isinstance(source_value, str):
@@ -336,6 +346,7 @@ class IngestionService:
 
             if isinstance(contents, list):
                 from github.ContentFile import ContentFile
+
                 contents_list: "list[ContentFile]" = [
                     c for c in contents if isinstance(c, ContentFile)
                 ]

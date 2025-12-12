@@ -2,8 +2,8 @@ import time
 from typing import Any, cast
 
 from llama_stack_client.types import ResponseObject
-from openai.types.chat import ChatCompletionUserMessageParam
 from openai import OpenAI
+from openai.types.chat import ChatCompletionUserMessageParam
 
 from src.exceptions import AgentRunMethodParameterError
 from src.models import ClassificationModel, SupportClassificationModel
@@ -17,7 +17,6 @@ def classification_agent(
     topic_llm: "str | None",
     guardrail_model: "str | None",
 ) -> "WorkflowState":
-
     agent_start_time = time.time()
     if "agent_timings" not in state or state["agent_timings"] is None:
         state["agent_timings"] = {}
@@ -143,7 +142,6 @@ def support_classification_agent(
     openai_client: "OpenAI | None",
     topic_llm: "str | None",
 ) -> "WorkflowState":
-
     agent_start_time = time.time()
     if "agent_timings" not in state or state["agent_timings"] is None:
         state["agent_timings"] = {}
@@ -247,7 +245,8 @@ def git_agent(
 
     try:
         logger.info("git_agent GIT calling response api")
-        # Type ignore: OpenAI SDK accepts dict for tools, type checker doesn't recognize MCP tool format
+        # Type ignore: OpenAI SDK accepts dict for tools,
+        # type checker doesn't recognize MCP tool format
         resp = openai_client.responses.create(  # type: ignore[arg-type]
             model=tools_llm,
             input=WorkflowAgentPrompts.GIT_PROMPT.format(
@@ -306,7 +305,8 @@ def pod_agent(
         logger.debug(
             f"K8S Agent making MCP request for submission: {state['submission_id']}"
         )
-        # Type ignore: OpenAI SDK accepts dict for tools, type checker doesn't recognize MCP tool format
+        # Type ignore: OpenAI SDK accepts dict for tools,
+        # type checker doesn't recognize MCP tool format
         resp = openai_client.responses.create(  # type: ignore[arg-type]
             model=tools_llm,
             input=WorkflowAgentPrompts.POD_PROMPT.format(namespace=state["namespace"]),
@@ -366,7 +366,8 @@ def perf_agent(
             f"K8S perf Agent making MCP request "
             f"for submission: {state['submission_id']}"
         )
-        # Type ignore: OpenAI SDK accepts dict for tools, type checker doesn't recognize MCP tool format
+        # Type ignore: OpenAI SDK accepts dict for tools,
+        # type checker doesn't recognize MCP tool format
         resp = openai_client.responses.create(  # type: ignore[arg-type]
             model=tools_llm,
             input=WorkflowAgentPrompts.PERF_PROMPT.format(namespace=state["namespace"]),
@@ -377,7 +378,8 @@ def perf_agent(
             f"for submission: {state['submission_id']}"
         )
 
-        # Convert OpenAI Response to ResponseObject format expected by extract_mcp_output
+        # Convert OpenAI Response to ResponseObject format
+        # expected by extract_mcp_output
         from llama_stack_client.types import ResponseObject
 
         resp_obj: "ResponseObject" = cast(ResponseObject, resp)
