@@ -645,7 +645,18 @@ def display_submission_details(submission_id: "str") -> "None":
             f"📚 RAG Sources ({len(rag_sources)} documents)", expanded=False
         ):
             for i, source in enumerate(rag_sources, 1):
-                st.markdown(f"**{i}.** {source.get('file_name', 'Unknown')}")
+                filename = source.get('filename', source.get('file_name', 'Unknown'))
+                github_url = source.get('url', '')
+                snippet = source.get('snippet', '')
+
+                if github_url:
+                    st.markdown(f"**{i}.** [{filename}]({github_url})")
+                else:
+                    st.markdown(f"**{i}.** {filename}")
+
+                if snippet:
+                    st.caption(f"Excerpt: {snippet}")
+
                 if source.get("chunk_id"):
                     st.caption(f"Chunk: {source['chunk_id']}")
 
