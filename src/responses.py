@@ -151,6 +151,40 @@ class RAGService:
         self.vector_store_map[category].append(vs_id)
         logger.debug(f"RAG Service: Mapped '{vs_name}' -> '{category}'")
 
+    def check_vector_stores_exist(self, pipelines: "list[Pipeline]") -> "bool":
+        """
+        checks if all required vector stores exist based on enabled pipelines.
+        """
+        if not self.client:
+            logger.error("RAG Service: Client not initialized")
+            return False
+
+        expected_stores = set()
+        for pipeline in pipelines:
+            if pipeline.enabled:
+                expected_stores.add(pipeline.vector_store_name.lower())
+
+        if not expected_stores:
+            logger.warning("RAG Service: No enabled pipelines found")
+            return False
+
+        vector_stores = self.client.vector_stores.list() or []
+        existing_stores = set()
+        for vs in vector_stores:
+            vs_name = vs.name.lower() if vs.name else vs.id.lower()
+            existing_stores.add(vs_name)
+
+        missing_stores = expected_stores - existing_stores
+
+        if missing_stores:
+            logger.info(f"RAG Service: Missing vector stores: {missing_stores}")
+            return False
+
+        logger.info(
+            f"RAG Service: All {len(expected_stores)} required vector stores exist"
+        )
+        return True
+
     def load_vector_stores(self) -> "bool":
         """
         loads vector stores from Llama Stack and map them by category.
@@ -163,7 +197,7 @@ class RAGService:
         vector_store_list = list(vector_stores)
 
         if not vector_stores or len(vector_store_list) == 0:
-            logger.warning("RAG Service: No vector stores found, attempting to ingest")
+            logger.warning("RAG Service: No vector stores found")
             return False
 
         for vs in vector_stores:

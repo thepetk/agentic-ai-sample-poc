@@ -125,34 +125,49 @@ def count_vector_stores() -> "int":
         return 0
 
 
-def skip_ingestion() -> "None":
+async def check_and_run_ingestion_if_needed() -> "None":
     """
-    skips the ingestion pipeline but load pipelines from config
+    checks if all required vector stores exist and runs ingestion if needed.
     """
     ingestion_state = get_ingestion_state()
 
     try:
-        logger.info("Skipping ingestion, loading pipelines from config")
+        logger.info("Checking if ingestion is needed...")
+
         ingestion_service = IngestionService(INGESTION_CONFIG)
         pipelines = ingestion_service.pipelines
-
-        # Count existing vector stores
-        vector_store_count = count_vector_stores()
-
-        ingestion_state["status"] = "skipped"
-        ingestion_state["message"] = (
-            f"Ingestion skipped - loaded {len(pipelines)} pipelines from config"
+        temp_client = LlamaStackClient(base_url=LLAMA_STACK_URL)
+        temp_rag_service = RAGService(
+            pipelines=pipelines, llama_stack_url=LLAMA_STACK_URL
         )
-        ingestion_state["pipelines"] = pipelines
-        ingestion_state["vector_store_count"] = vector_store_count
-        logger.info(
-            f"Ingestion skipped: loaded {len(pipelines)} pipelines from config, "
-            f"{vector_store_count} vector stores in database"
-        )
+        temp_rag_service.client = temp_client
+        all_stores_exist = temp_rag_service.check_vector_stores_exist(pipelines)
+
+        if all_stores_exist:
+            logger.info("All vector stores exist, skipping ingestion")
+            vector_store_count = count_vector_stores()
+
+            ingestion_state["status"] = "skipped"
+            ingestion_state["message"] = (
+                f"All vector stores exist - loaded {len(pipelines)}"
+                " pipelines from config"
+            )
+            ingestion_state["pipelines"] = pipelines
+            ingestion_state["vector_store_count"] = vector_store_count
+        else:
+            logger.info("Some vector stores missing, starting ingestion...")
+            ingestion_state["status"] = "running"
+
+            loop = get_or_create_event_loop()
+            tasks = get_tasks_dict()
+            ingestion_task = loop.create_task(run_ingestion_pipeline())
+            tasks["__ingestion__"] = ingestion_task
+            logger.info("Ingestion pipeline task submitted")
+
     except Exception as e:
-        logger.error(f"Failed to load pipelines from config: {e}")
+        logger.error(f"Failed to check vector stores: {e}")
         ingestion_state["status"] = "error"
-        ingestion_state["message"] = f"Failed to load pipelines: {str(e)}"
+        ingestion_state["message"] = f"Failed to check vector stores: {str(e)}"
         ingestion_state["pipelines"] = []
 
 
@@ -214,20 +229,6 @@ async def run_ingestion_pipeline() -> "None":
         error_msg = str(e)
         ingestion_state["message"] = f"Ingestion failed: {error_msg[:200]}"
         logger.error(f"Ingestion pipeline failed: {e}", exc_info=True)
-
-
-def start_ingestion_if_needed() -> "None":
-    """
-    Start ingestion pipeline if not already started"""
-    ingestion_state = get_ingestion_state()
-
-    if ingestion_state["status"] == "pending":
-        loop = get_or_create_event_loop()
-        tasks = get_tasks_dict()
-
-        ingestion_task = loop.create_task(run_ingestion_pipeline())
-        tasks["__ingestion__"] = ingestion_task
-        logger.info("Ingestion pipeline task submitted")
 
 
 async def run_workflow_task(
@@ -363,26 +364,10 @@ def main():
         if ingestion_state["status"] == "running":
             st.info("⏳ Running data ingestion pipeline... Please wait.")
         else:
-            st.info("📋 Data ingestion pipeline is ready to run.")
-            st.markdown(
-                """
-            **Choose an option:**
-            - **Run Ingestion**: Process documents and create vector stores
-            (recommended for first time)
-            - **Skip Ingestion**: Load pipeline configuration only
-            (use if data is already ingested)
-            """
-            )
-
-            col1, col2, _ = st.columns([1, 1, 3])
-            with col1:
-                if st.button("▶️ Run Ingestion", type="primary"):
-                    start_ingestion_if_needed()
-                    st.rerun()
-            with col2:
-                if st.button("⏭️ Skip Ingestion", type="secondary"):
-                    skip_ingestion()
-                    st.rerun()
+            st.info("🔍 Checking vector stores...")
+            loop = get_or_create_event_loop()
+            loop.run_until_complete(check_and_run_ingestion_if_needed())
+            st.rerun()
             return
 
         time.sleep(0.5)
@@ -418,7 +403,10 @@ def main():
         if "active_submissions" not in st.session_state:
             st.session_state.active_submissions = []
 
-        # display active submissions
+        if "selected_submission" not in st.session_state:
+            st.session_state.selected_submission = None
+
+        # display active submissions as clickable buttons
         if st.session_state.active_submissions:
             for sub_id in st.session_state.active_submissions:
                 is_complete = submission_states.get(sub_id, {}).get("workflow_complete")
@@ -437,14 +425,26 @@ def main():
                     question[:30] + "..." if len(question) > 30 else question
                 )
 
-                with st.expander(f"{status_icon} {sub_id[:8]}... - {question_preview}"):
-                    st.markdown("**Full Submission ID:**")
-                    st.code(sub_id, language=None)
+                # Use button to select submission
+                button_type = (
+                    "primary"
+                    if st.session_state.selected_submission == sub_id
+                    else "secondary"
+                )
+                if st.button(
+                    f"{status_icon} {sub_id[:8]}... - {question_preview}",
+                    key=f"select_{sub_id}",
+                    type=button_type,
+                    use_container_width=True,
+                ):
+                    st.session_state.selected_submission = sub_id
+                    st.rerun()
         else:
             st.info("No active submissions")
 
         if st.button("Clear All Submissions"):
             st.session_state.active_submissions = []
+            st.session_state.selected_submission = None
             st.rerun()
 
     st.title("🤖 Agentic AI Workflow")
@@ -483,7 +483,7 @@ def main():
                 height=100,
             )
 
-            col1, col2 = st.columns([1, 4])
+            col1, _ = st.columns([1, 4])
             with col1:
                 submit_button = st.form_submit_button(
                     "🚀 Submit", use_container_width=True
@@ -498,6 +498,9 @@ def main():
                     if "active_submissions" not in st.session_state:
                         st.session_state.active_submissions = []
                     st.session_state.active_submissions.insert(0, submission_id)
+
+                    # Auto-select the newly submitted question
+                    st.session_state.selected_submission = submission_id
 
                     submission_states[submission_id] = {  # type: ignore[assignment]
                         "input": question,
@@ -524,39 +527,23 @@ def main():
     with tab2:
         st.subheader("View Submission Results")
 
-        view_mode = st.radio(
-            "Select viewing mode:",
-            ["Recent Submissions", "Search by ID"],
-            horizontal=True,
-        )
-
-        if view_mode == "Recent Submissions":
-            if not st.session_state.get("active_submissions"):
-                st.info(
-                    "No submissions yet. Submit a question in "
-                    "the 'Submit Question' tab."
-                )
+        # Display selected submission from sidebar
+        if st.session_state.selected_submission:
+            if st.session_state.selected_submission in submission_states:
+                display_submission_details(st.session_state.selected_submission)
             else:
-                selected_sub = st.selectbox(
-                    "Select a submission:",
-                    st.session_state.active_submissions,
-                    format_func=lambda x: (
-                        f"{x[:8]}... - {
-                            submission_states.get(x, {}).get('input', 'Unknown')[:50]
-                        }"
-                    ),
+                st.error(
+                    f"Submission '{st.session_state.selected_submission[:8]}...' "
+                    "not found in submission states"
                 )
-
-                if selected_sub:
-                    display_submission_details(selected_sub)
-
-        else:  # Search by ID
-            search_id = st.text_input("Enter Submission ID:")
-            if st.button("Search"):
-                if search_id in submission_states:
-                    display_submission_details(search_id)
-                else:
-                    st.error(f"Submission ID '{search_id}' not found")
+                st.session_state.selected_submission = None
+                st.rerun()
+        elif st.session_state.get("active_submissions"):
+            st.info("👈 Select a submission from the sidebar to view its details")
+        else:
+            st.info(
+                "No submissions yet. Submit a question in the 'Submit Question' tab."
+            )
 
     # auto-refresh when there are active tasks
     if has_active_tasks:
