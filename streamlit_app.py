@@ -20,8 +20,6 @@ from src.types import Pipeline, WorkflowState
 from src.utils import logger, submission_states
 from src.workflow import Workflow
 
-conversations: "dict[str, list[WorkflowState]]" = {}
-
 API_KEY = os.getenv("OPENAI_API_KEY", "not applicable")
 INFERENCE_SERVER_OPENAI = os.getenv(
     "LLAMA_STACK_SERVER_OPENAI", "http://localhost:8321/v1/openai/v1"
@@ -379,17 +377,13 @@ async def run_workflow_task(
     try:
         logger.info(f"Starting workflow task for submission {submission_id}")
 
-        initial_state = submission_states.get(submission_id, {})
-        conversation_id = initial_state.get("conversation_id", "")
-        exchange_index = initial_state.get("exchange_index", 0)
-
         result = await asyncio.to_thread(
             workflow.invoke,  # type: ignore[attr-defined]
             {
                 "input": question,
                 "submission_id": submission_id,
-                "conversation_id": conversation_id,
-                "exchange_index": exchange_index,
+                "conversation_id": submission_id,
+                "exchange_index": 0,
                 "messages": [],
                 "decision": "",
                 "namespace": "",
@@ -410,10 +404,11 @@ async def run_workflow_task(
         submission_states[submission_id] = result  # type: ignore[assignment]
 
         conversation_id = result.get("conversation_id")
-        exchange_index = result.get("exchange_index", 0)
-        if conversation_id and conversation_id in conversations:
-            if exchange_index < len(conversations[conversation_id]):
-                conversations[conversation_id][exchange_index] = result
+        if conversation_id:
+            # NOTE: st.session_state.conversations is accessed from main thread
+            # This update happens in async thread, so we just update submission_states
+            # The UI will read from submission_states when rendering
+            pass
 
         logger.info(
             f"Workflow task completed for submission {submission_id}: "
@@ -422,14 +417,11 @@ async def run_workflow_task(
         )
     except Exception as e:
         logger.error(f"Workflow task failed for submission {submission_id}: {e}")
-        initial_state = submission_states.get(submission_id, {})
-        conversation_id = initial_state.get("conversation_id", "")
-        exchange_index = initial_state.get("exchange_index", 0)
         error_state: "WorkflowState" = {
             "input": question,
             "submission_id": submission_id,
-            "conversation_id": conversation_id,
-            "exchange_index": exchange_index,
+            "conversation_id": submission_id,
+            "exchange_index": 0,
             "decision": "error",
             "classification_message": f"Error: {str(e)[:200]}",
             "workflow_complete": True,
@@ -582,9 +574,22 @@ def main():
             st.session_state.selected_submission = None
 
         if st.session_state.active_submissions:
-            for sub_id in st.session_state.active_submissions:
-                is_complete = submission_states.get(sub_id, {}).get("workflow_complete")
-                decision = submission_states.get(sub_id, {}).get("decision", "").lower()
+            for conversation_id in st.session_state.active_submissions:
+                conversation_exchanges = st.session_state.conversations.get(
+                    conversation_id, []
+                )
+
+                if not conversation_exchanges:
+                    continue
+
+                latest_exchange = conversation_exchanges[-1]
+                latest_submission_id = latest_exchange.get("submission_id", "")
+                latest_state = submission_states.get(
+                    latest_submission_id, latest_exchange
+                )
+
+                is_complete = latest_state.get("workflow_complete", False)
+                decision = latest_state.get("decision", "").lower()
 
                 if decision in ("error", "unsafe", "unknown"):
                     status_icon = "❌"
@@ -593,23 +598,29 @@ def main():
                 else:
                     status_icon = "⏳"
 
-                question = submission_states.get(sub_id, {}).get("input", "")
+                first_question = conversation_exchanges[0].get("input", "")
                 question_preview = (
-                    question[:30] + "..." if len(question) > 30 else question
+                    first_question[:25] + "..."
+                    if len(first_question) > 25
+                    else first_question
                 )
+
+                exchange_count_str = ""
+                if len(conversation_exchanges) > 1:
+                    exchange_count_str = f" ({len(conversation_exchanges)} msgs)"
 
                 button_type = (
                     "primary"
-                    if st.session_state.selected_submission == sub_id
+                    if st.session_state.selected_submission == conversation_id
                     else "secondary"
                 )
                 if st.button(
-                    f"{status_icon} {sub_id[:8]}... - {question_preview}",
-                    key=f"select_{sub_id}",
+                    f"{status_icon} {question_preview}{exchange_count_str}",
+                    key=f"select_{conversation_id}",
                     type=button_type,
                     use_container_width=True,
                 ):
-                    st.session_state.selected_submission = sub_id
+                    st.session_state.selected_submission = conversation_id
                     st.rerun()
         else:
             st.info("No conversations yet")
@@ -653,53 +664,41 @@ def main():
             except Exception as e:
                 st.error(f"Could not display graph: {e}")
 
+    if "conversations" not in st.session_state:
+        st.session_state.conversations = {}
+
     if st.session_state.selected_submission:
         conversation_id = st.session_state.selected_submission
-        conversation_exchanges = conversations.get(conversation_id, [])
+        conversation_exchanges = st.session_state.conversations.get(conversation_id, [])
 
         with st.container():
             for exchange in conversation_exchanges:
                 with st.chat_message("user"):
                     st.write(exchange.get("input", ""))
 
-                current_state = submission_states.get(
-                    exchange.get("submission_id", ""), exchange
-                )
+                submission_id = exchange.get("submission_id", "")
+                current_state = submission_states.get(submission_id, exchange)
 
                 _render_exchange_response(current_state, AGENT_ICONS)
-
-    if not st.session_state.selected_submission and not st.session_state.get(
-        "active_submissions"
-    ):
+    elif not st.session_state.selected_submission:
         st.markdown(
             """
             <div style='text-align: center; padding: 50px; color: #666;'>
-                <h3>💬 Start a New Conversation</h3>
+                <h3>💬 New Conversation</h3>
                 <p>Ask a question using the chat input below.</p>
-                <p><i>Examples:</i></p>
-                <ul style='list-style: none; padding: 0;'>
-                    <li>• What are the legal implications of using GPL licenses?</li>
-                    <li>• How do I troubleshoot network connectivity issues?</li>
-                    <li>• What are the company's vacation policies?</li>
-                </ul>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    if has_active_tasks:
-        st.info(
-            "⏳ Please wait for the current request to complete "
-            "before submitting a new question."
-        )
-        question = None
-    else:
-        question = st.chat_input("Ask a question...", key="chat_input")
+    question = st.chat_input("Ask a question...", key="chat_input")
 
     if question:
         if st.session_state.selected_submission:
             conversation_id = st.session_state.selected_submission
-            exchange_index = len(conversations.get(conversation_id, []))
+            exchange_index = len(
+                st.session_state.conversations.get(conversation_id, [])
+            )
         else:
             conversation_id = str(uuid.uuid4())
             exchange_index = 0
@@ -707,8 +706,9 @@ def main():
                 st.session_state.active_submissions = []
             st.session_state.active_submissions.insert(0, conversation_id)
             st.session_state.selected_submission = conversation_id
-            conversations[conversation_id] = []
+            st.session_state.conversations[conversation_id] = []
 
+        # Create a new submission for this exchange
         submission_id = str(uuid.uuid4())
 
         exchange_state: "WorkflowState" = {  # type: ignore[assignment]
@@ -732,7 +732,8 @@ def main():
             "status_history": [],
         }
 
-        conversations[conversation_id].append(exchange_state)
+        # Add exchange to conversation
+        st.session_state.conversations[conversation_id].append(exchange_state)
         submission_states[submission_id] = exchange_state
 
         submit_workflow_task(workflow, question, submission_id)
