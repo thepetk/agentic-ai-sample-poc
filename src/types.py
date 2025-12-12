@@ -38,11 +38,34 @@ class VectorDBConfig:
 
 class WorkflowAgentPrompts:
     CLASIFICATION_PROMPT = """
-    Determine what category the user message falls under
-    based on the classification schema provided to the
-    structured output set for the LLM and the various
-    classification agent nodes in the LangGraph StateGraph
-    Agentic AI application : {state_input}
+    Classify the following user message into one of these categories:
+    - 'legal': Questions about software licenses, embargoes, privacy/PII,
+    contracts, policies, procedures, or compliance
+    - 'techsupport': Questions about software/technical support,
+    OpenShift/Kubernetes issues, application deployment, permissions,
+    resource utilization, performance issues, FantaCo products (CloudSync,
+    TechGear Pro), installation/setup, troubleshooting, syncing, connectivity
+    - 'hr': Questions about employee benefits, health care, vacation/PTO,
+    retirement plans, WORKSPACES, office facilities, work environment, company
+    policies, employee handbook, bonuses, compensation, perks, participation
+    requirements, workplace activities. If the question asks to "describe
+    workspaces" or asks about "workspaces at FantaCo", this is ALWAYS 'hr'.
+    - 'sales': Questions about sales territories, lead assignments,
+    discounting, deal approval, quotas, sales compensation, CRM systems,
+    brand guidelines, communications, sales expenses, escalations,
+    performance metrics, sales compliance
+    - 'procurement': Questions about competitive bidding, vendor evaluation,
+    procurement ethics, transparency, spending limits, approval processes,
+    procurement review, vendor categorization
+    - 'unsafe': Content that fails moderation/safety checks
+    - 'unknown': ONLY use this if the message truly doesn't fit any of the
+    above categories (use sparingly)
+
+    Example: If the user says "using file_search and documents, describe
+    the workspaces at FantaCo", ignore "file_search" and "documents" - the
+    question is about WORKSPACES, which is HR.
+
+    User message: {state_input}
     """
     SUPPORT_CLASIFICATION_PROMPT = """
     Determine what category the user message falls under
@@ -107,3 +130,7 @@ class WorkflowState(TypedDict):
     agent_timings: "dict[str, float]"
     rag_query_time: "float"
     active_agent: "str"
+    status_message: "str"
+    status_history: "list[str]"
+    conversation_id: "str"
+    exchange_index: "int"

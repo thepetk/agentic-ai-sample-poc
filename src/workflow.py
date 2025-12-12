@@ -27,10 +27,9 @@ from src.utils import (
     extract_rag_response_text,
     logger,
     route_to_next_node,
+    submission_states,
     support_route_to_next_node,
 )
-
-submission_states: "dict[str, WorkflowState]" = {}
 
 INFERENCE_MODEL = os.getenv("INFERENCE_MODEL", DEFAULT_INFERENCE_MODEL)
 LLAMA_STACK_URL = os.getenv("LLAMA_STACK_URL", DEFAULT_LLAMA_STACK_URL)
@@ -139,8 +138,20 @@ class Workflow:
                 state["agent_timings"] = {}
             if "rag_query_time" not in state:
                 state["rag_query_time"] = 0.0
+            if "status_history" not in state or state["status_history"] is None:
+                state["status_history"] = []
 
             state["active_agent"] = department_display_name
+            status_msg = f"👤 {department_display_name} Agent processes the request..."
+            state["status_message"] = status_msg
+            state["status_history"].append(status_msg)
+
+            submission_id = state.get("submission_id")
+            if submission_id:
+                submission_states[submission_id] = cast("WorkflowState", dict(state))
+                logger.info(
+                    f"Updated status: {status_msg} for submission {submission_id}"
+                )
 
             # check if RAG is available for this department
             use_rag = (
@@ -184,8 +195,6 @@ class Workflow:
                         f"{department_display_name}: Making RAG-enabled response call"
                     )
                     rag_start_time = time.time()
-                    # self.rag_service and self.rag_service.client
-                    # are guaranteed to be not None here
                     rag_response = self.rag_service.client.responses.create(
                         model=INFERENCE_MODEL,
                         input=rag_prompt,
@@ -260,9 +269,19 @@ class Workflow:
                 agent_end_time - agent_start_time
             )
 
+            completion_msg = f"✅ {department_display_name} Agent finished"
+            state["status_history"].append(completion_msg)
+            state["status_message"] = completion_msg
+
+            submission_id = state.get("submission_id")
+            if submission_id:
+                submission_states[submission_id] = cast("WorkflowState", dict(state))
+                logger.info(
+                    f"Updated status: {completion_msg} for submission {submission_id}"
+                )
+
             return state
 
-        # Build the agent graph
         agent_builder = StateGraph(WorkflowState)  # type: ignore[arg-type]
         agent_builder.add_node(f"{department_name}_set_message", init_message)
         agent_builder.add_node("llm_node", llm_node)

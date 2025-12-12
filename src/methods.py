@@ -8,7 +8,7 @@ from openai.types.chat import ChatCompletionUserMessageParam
 from src.exceptions import AgentRunMethodParameterError
 from src.models import ClassificationModel, SupportClassificationModel
 from src.types import WorkflowAgentPrompts, WorkflowState
-from src.utils import extract_mcp_output, logger
+from src.utils import extract_mcp_output, logger, submission_states
 
 
 def classification_agent(
@@ -20,7 +20,18 @@ def classification_agent(
     agent_start_time = time.time()
     if "agent_timings" not in state or state["agent_timings"] is None:
         state["agent_timings"] = {}
+    if "status_history" not in state or state["status_history"] is None:
+        state["status_history"] = []
+
     state["active_agent"] = "Classification"
+    status_msg = "🔍 Classification Agent processes the request..."
+    state["status_message"] = status_msg
+    state["status_history"].append(status_msg)
+
+    submission_id = state.get("submission_id")
+    if submission_id:
+        submission_states[submission_id] = cast("WorkflowState", dict(state))
+        logger.info(f"Updated status: {status_msg} for submission {submission_id}")
 
     # check if necessary variables exist
     if openai_client is None:
@@ -68,14 +79,17 @@ def classification_agent(
 
     # Use OpenAI client for structured output with Pydantic models
     try:
+        classification_prompt = WorkflowAgentPrompts.CLASIFICATION_PROMPT.format(
+            state_input=state["input"]
+        )
+        logger.debug(f"Classification prompt: {classification_prompt}")
+
         messages: "list[ChatCompletionUserMessageParam]" = [
             cast(
                 ChatCompletionUserMessageParam,
                 {
                     "role": "user",
-                    "content": WorkflowAgentPrompts.CLASIFICATION_PROMPT.format(
-                        state_input=state["input"]
-                    ),
+                    "content": classification_prompt,
                 },
             )
         ]
@@ -86,6 +100,7 @@ def classification_agent(
         )
 
         classification_result = completion.choices[0].message.parsed
+        logger.debug(f"Raw classification result object: {classification_result}")
 
         # Validate classification
         if not classification_result or not hasattr(
@@ -134,6 +149,18 @@ def classification_agent(
     agent_end_time = time.time()
     state["agent_timings"]["Classification"] = agent_end_time - agent_start_time
 
+    completion_msg = (
+        "✅ Classification Agent finished:"
+        f" routed to {classification_result.classification}"
+    )
+    state["status_history"].append(completion_msg)
+    state["status_message"] = completion_msg
+
+    submission_id = state.get("submission_id")
+    if submission_id:
+        submission_states[submission_id] = cast("WorkflowState", dict(state))
+        logger.info(f"Updated status: {completion_msg} for submission {submission_id}")
+
     return state
 
 
@@ -145,7 +172,18 @@ def support_classification_agent(
     agent_start_time = time.time()
     if "agent_timings" not in state or state["agent_timings"] is None:
         state["agent_timings"] = {}
+    if "status_history" not in state or state["status_history"] is None:
+        state["status_history"] = []
+
     state["active_agent"] = "Support Classification"
+    status_msg = "🔍 Support Classification Agent processes the request..."
+    state["status_message"] = status_msg
+    state["status_history"].append(status_msg)
+
+    submission_id = state.get("submission_id")
+    if submission_id:
+        submission_states[submission_id] = cast("WorkflowState", dict(state))
+        logger.info(f"Updated status: {status_msg} for submission {submission_id}")
 
     # check if necessary variables exist
     if openai_client is None:
@@ -206,6 +244,17 @@ def support_classification_agent(
     agent_end_time = time.time()
     state["agent_timings"]["Support Classification"] = agent_end_time - agent_start_time
 
+    completion_msg = (
+        f"✅ Support Classification Agent finished: routed to {state['decision']}"
+    )
+    state["status_history"].append(completion_msg)
+    state["status_message"] = completion_msg
+
+    submission_id = state.get("submission_id")
+    if submission_id:
+        submission_states[submission_id] = cast("WorkflowState", dict(state))
+        logger.info(f"Updated status: {completion_msg} for submission {submission_id}")
+
     return state
 
 
@@ -221,7 +270,18 @@ def git_agent(
     agent_start_time = time.time()
     if "agent_timings" not in state or state["agent_timings"] is None:
         state["agent_timings"] = {}
+    if "status_history" not in state or state["status_history"] is None:
+        state["status_history"] = []
+
     state["active_agent"] = "Git"
+    status_msg = "🔗 Git Agent processes the request..."
+    state["status_message"] = status_msg
+    state["status_history"].append(status_msg)
+
+    submission_id = state.get("submission_id")
+    if submission_id:
+        submission_states[submission_id] = cast("WorkflowState", dict(state))
+        logger.info(f"Updated status: {status_msg} for submission {submission_id}")
 
     # check if necessary variables exist
     if openai_client is None:
@@ -268,6 +328,15 @@ def git_agent(
     state["agent_timings"]["Git"] = agent_end_time - agent_start_time
     state["workflow_complete"] = True
 
+    completion_msg = "✅ Git Agent finished: GitHub issue created"
+    state["status_history"].append(completion_msg)
+    state["status_message"] = completion_msg
+
+    submission_id = state.get("submission_id")
+    if submission_id:
+        submission_states[submission_id] = cast("WorkflowState", dict(state))
+        logger.info(f"Updated status: {completion_msg} for submission {submission_id}")
+
     return state
 
 
@@ -281,7 +350,18 @@ def pod_agent(
     agent_start_time = time.time()
     if "agent_timings" not in state or state["agent_timings"] is None:
         state["agent_timings"] = {}
+    if "status_history" not in state or state["status_history"] is None:
+        state["status_history"] = []
+
     state["active_agent"] = "Pod"
+    status_msg = "☸️ Pod Agent processes the request..."
+    state["status_message"] = status_msg
+    state["status_history"].append(status_msg)
+
+    submission_id = state.get("submission_id")
+    if submission_id:
+        submission_states[submission_id] = cast("WorkflowState", dict(state))
+        logger.info(f"Updated status: {status_msg} for submission {submission_id}")
 
     # check if necessary variables exist
     if openai_client is None:
@@ -326,6 +406,15 @@ def pod_agent(
     agent_end_time = time.time()
     state["agent_timings"]["Pod"] = agent_end_time - agent_start_time
 
+    completion_msg = "✅ Pod Agent finished"
+    state["status_history"].append(completion_msg)
+    state["status_message"] = completion_msg
+
+    submission_id = state.get("submission_id")
+    if submission_id:
+        submission_states[submission_id] = cast("WorkflowState", dict(state))
+        logger.info(f"Updated status: {completion_msg} for submission {submission_id}")
+
     return state
 
 
@@ -339,7 +428,18 @@ def perf_agent(
     agent_start_time = time.time()
     if "agent_timings" not in state or state["agent_timings"] is None:
         state["agent_timings"] = {}
+    if "status_history" not in state or state["status_history"] is None:
+        state["status_history"] = []
+
     state["active_agent"] = "Performance"
+    status_msg = "⚡ Performance Agent processes the request..."
+    state["status_message"] = status_msg
+    state["status_history"].append(status_msg)
+
+    submission_id = state.get("submission_id")
+    if submission_id:
+        submission_states[submission_id] = cast("WorkflowState", dict(state))
+        logger.info(f"Updated status: {status_msg} for submission {submission_id}")
 
     # check if necessary variables exist
     if openai_client is None:
@@ -383,5 +483,14 @@ def perf_agent(
 
     agent_end_time = time.time()
     state["agent_timings"]["Performance"] = agent_end_time - agent_start_time
+
+    completion_msg = "✅ Performance Agent finished"
+    state["status_history"].append(completion_msg)
+    state["status_message"] = completion_msg
+
+    submission_id = state.get("submission_id")
+    if submission_id:
+        submission_states[submission_id] = cast("WorkflowState", dict(state))
+        logger.info(f"Updated status: {completion_msg} for submission {submission_id}")
 
     return state

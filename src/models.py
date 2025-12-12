@@ -22,7 +22,8 @@ class ClassificationModel(BaseModel):
         - 'sales' if related to sales policies
         - 'procurement' if related to procurement policies
         - 'unsafe' if the input fails the moderation/safety check
-        - 'unknown' for everything else
+        - 'unknown' ONLY if the question truly does not fit any category
+        above (use sparingly)
 
         Examples of legal questions that can be processed:
         - questions about various software licenses
@@ -61,11 +62,13 @@ class ClassificationModel(BaseModel):
         - questions about employee benefits, health care, vacation,
           PTO, retirement plans
         - questions about workspaces, office facilities, work
-          environment
+          environment, office spaces, workplace setup
         - questions about company policies, employee handbook
         - questions about bonuses, compensation, perks
         - questions about participation requirements or workplace
           activities
+        - ANY question asking to describe or explain workspaces,
+          office facilities, or work environments
 
         Examples of sales questions that can be processed:
         - questions about sales territories, lead assignments

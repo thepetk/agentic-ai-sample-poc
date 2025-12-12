@@ -17,8 +17,10 @@ from src.constants import (
 from src.ingest import IngestionService
 from src.responses import RAGService
 from src.types import Pipeline, WorkflowState
-from src.utils import logger
-from src.workflow import Workflow, submission_states
+from src.utils import logger, submission_states
+from src.workflow import Workflow
+
+conversations: "dict[str, list[WorkflowState]]" = {}
 
 API_KEY = os.getenv("OPENAI_API_KEY", "not applicable")
 INFERENCE_SERVER_OPENAI = os.getenv(
@@ -198,7 +200,6 @@ async def run_ingestion_pipeline() -> "None":
 
         ingestion_state["message"] = "Initializing ingestion service..."
 
-        # run the ingestion pipeline in a thread to avoid blocking the event loop
         ingestion_service = await asyncio.to_thread(IngestionService, INGESTION_CONFIG)
 
         ingestion_state["message"] = (
@@ -231,6 +232,146 @@ async def run_ingestion_pipeline() -> "None":
         logger.error(f"Ingestion pipeline failed: {e}", exc_info=True)
 
 
+def _render_exchange_response(
+    state: "WorkflowState", AGENT_ICONS: "dict[str, str]"
+) -> "None":
+    """Render the agent response for a single exchange"""
+    if not state:
+        return
+
+    decision = state.get("decision", "").lower()
+    classification_msg = state.get("classification_message", "")
+    is_complete = state.get("workflow_complete", False)
+    active_agent = state.get("active_agent", "")
+    status_message = state.get("status_message", "")
+    status_history = state.get("status_history", [])
+    is_error = decision in ("error", "unsafe", "unknown")
+
+    for status_msg in status_history:
+        if "Classification" in status_msg:
+            status_icon = AGENT_ICONS.get("Classification", "🔍")
+        elif "Support Classification" in status_msg:
+            status_icon = AGENT_ICONS.get("Software Support", "💻")
+        elif "Git" in status_msg:
+            status_icon = AGENT_ICONS.get("Git", "🔗")
+        elif "Pod" in status_msg:
+            status_icon = AGENT_ICONS.get("Pod", "☸️")
+        elif "Performance" in status_msg:
+            status_icon = AGENT_ICONS.get("Performance", "⚡")
+        elif "Legal" in status_msg:
+            status_icon = AGENT_ICONS.get("Legal", "⚖️")
+        elif "Human Resources" in status_msg or "HR" in status_msg:
+            status_icon = AGENT_ICONS.get("Human Resources", "👥")
+        elif "Sales" in status_msg:
+            status_icon = AGENT_ICONS.get("Sales", "💼")
+        elif "Procurement" in status_msg:
+            status_icon = AGENT_ICONS.get("Procurement", "🛒")
+        elif "Software Support" in status_msg:
+            status_icon = AGENT_ICONS.get("Software Support", "💻")
+        else:
+            status_icon = "⏳"
+
+        with st.chat_message("assistant", avatar=status_icon):
+            if "✅" in status_msg:
+                st.success(f"**{status_msg}**")
+            else:
+                st.info(f"**{status_msg}**")
+
+    if decision and decision not in ("", "processing") and not is_error:
+        agent_icon = AGENT_ICONS.get("Classification", "🔍")
+        with st.chat_message("assistant", avatar=agent_icon):
+            dept_map = {
+                "legal": "Legal",
+                "hr": "Human Resources",
+                "sales": "Sales",
+                "procurement": "Procurement",
+                "techsupport": "Software Support",
+                "support": "Software Support",
+                "pod": "Pod",
+                "perf": "Performance",
+                "git": "Git",
+            }
+            dept_name = dept_map.get(decision, decision.title())
+            dept_icon = AGENT_ICONS.get(dept_name, "🤖")
+            st.success(
+                f"**{agent_icon} Classification Agent**\n\n"
+                f"Routed to {dept_icon} **{dept_name}**"
+            )
+
+    if active_agent or is_complete or is_error:
+        if is_error and not active_agent:
+            agent_icon = AGENT_ICONS.get("Classification", "🔍")
+            display_agent_name = "Classification Agent"
+        else:
+            agent_icon = AGENT_ICONS.get(active_agent, "🤖")
+            if active_agent:
+                display_agent_name = f"{active_agent} Agent"
+            else:
+                display_agent_name = "Agent"
+
+        with st.chat_message("assistant", avatar=agent_icon):
+            if not is_complete and not is_error:
+                if not status_message:
+                    st.info(
+                        f"**{agent_icon} {display_agent_name}**\n\n"
+                        f"⏳ Processing your request..."
+                    )
+            elif classification_msg and classification_msg != "Processing...":
+                if is_error:
+                    if decision == "unsafe":
+                        st.error(
+                            f"**{agent_icon} {display_agent_name}**\n\n❌ "
+                            f"**Content Safety Issue**\n\n{classification_msg}"
+                        )
+                    elif decision == "unknown":
+                        st.warning(
+                            f"**{agent_icon} {display_agent_name}**\n\n⚠️"
+                            f" **Unable to Process**\n\n{classification_msg}"
+                        )
+                    else:
+                        st.error(
+                            f"**{agent_icon} {display_agent_name}**\n\n❌"
+                            f" **Error**\n\n{classification_msg}"
+                        )
+                else:
+                    st.markdown(f"**{agent_icon} {display_agent_name}**")
+                    st.write(classification_msg)
+            elif is_error:
+                st.error(
+                    f"**{agent_icon} {display_agent_name}**\n\n❌ An error occurred."
+                    f" Decision: {decision}"
+                )
+
+            if is_complete and not is_error:
+                rag_sources = state.get("rag_sources", [])
+                if rag_sources:
+                    with st.expander("📚 Sources", expanded=False):
+                        for idx, source in enumerate(rag_sources, 1):
+                            filename = source.get("filename", "Unknown")
+                            url = source.get("url", "")
+                            if url:
+                                st.markdown(f"{idx}. [{filename}]({url})")
+                            else:
+                                st.markdown(f"{idx}. {filename}")
+
+                github_issue = state.get("github_issue", "")
+                if github_issue:
+                    st.success(f"✅ GitHub issue created: {github_issue}")
+
+            if is_complete:
+                agent_timings = state.get("agent_timings", {})
+                if agent_timings:
+                    st.markdown("**⏱️ Performance Metrics:**")
+                    cols = st.columns(min(len(agent_timings), 3))
+                    for idx, (agent_name, timing) in enumerate(agent_timings.items()):
+                        with cols[idx % len(cols)]:
+                            st.metric(agent_name, f"{timing:.2f}s")
+
+                rag_time = state.get("rag_query_time", 0.0)
+                if rag_time > 0:
+                    st.metric("RAG Query", f"{rag_time:.2f}s")
+
+
 async def run_workflow_task(
     workflow: "Workflow", question: "str", submission_id: "str"
 ) -> "None":
@@ -238,12 +379,17 @@ async def run_workflow_task(
     try:
         logger.info(f"Starting workflow task for submission {submission_id}")
 
-        # Execute workflow using asyncio.to_thread to avoid blocking
+        initial_state = submission_states.get(submission_id, {})
+        conversation_id = initial_state.get("conversation_id", "")
+        exchange_index = initial_state.get("exchange_index", 0)
+
         result = await asyncio.to_thread(
             workflow.invoke,  # type: ignore[attr-defined]
             {
                 "input": question,
                 "submission_id": submission_id,
+                "conversation_id": conversation_id,
+                "exchange_index": exchange_index,
                 "messages": [],
                 "decision": "",
                 "namespace": "",
@@ -256,11 +402,19 @@ async def run_workflow_task(
                 "agent_timings": {},
                 "rag_query_time": 0.0,
                 "active_agent": "",
+                "status_message": "",
+                "status_history": [],
             },
         )
 
-        # Update submission_states with the final workflow result
         submission_states[submission_id] = result  # type: ignore[assignment]
+
+        conversation_id = result.get("conversation_id")
+        exchange_index = result.get("exchange_index", 0)
+        if conversation_id and conversation_id in conversations:
+            if exchange_index < len(conversations[conversation_id]):
+                conversations[conversation_id][exchange_index] = result
+
         logger.info(
             f"Workflow task completed for submission {submission_id}: "
             f"decision={result.get('decision')}, "
@@ -268,9 +422,14 @@ async def run_workflow_task(
         )
     except Exception as e:
         logger.error(f"Workflow task failed for submission {submission_id}: {e}")
+        initial_state = submission_states.get(submission_id, {})
+        conversation_id = initial_state.get("conversation_id", "")
+        exchange_index = initial_state.get("exchange_index", 0)
         error_state: "WorkflowState" = {
             "input": question,
             "submission_id": submission_id,
+            "conversation_id": conversation_id,
+            "exchange_index": exchange_index,
             "decision": "error",
             "classification_message": f"Error: {str(e)[:200]}",
             "workflow_complete": True,
@@ -283,6 +442,8 @@ async def run_workflow_task(
             "agent_timings": {},
             "rag_query_time": 0.0,
             "active_agent": "",
+            "status_message": "",
+            "status_history": [],
         }
         submission_states[submission_id] = error_state
 
@@ -298,8 +459,6 @@ def progress_event_loop() -> "None":
 
     if pending_tasks:
         try:
-            # Just tick the event loop once without blocking
-            # This allows tasks to make progress without freezing the UI
             loop.run_until_complete(asyncio.sleep(0))
         except Exception as e:
             logger.error(f"Error progressing event loop: {e}")
@@ -376,13 +535,11 @@ def main():
 
     pipelines = ingestion_state.get("pipelines")
     if pipelines is None:
-        # parse pipelines from config file without running ingestion
         logger.info("Pipelines not available, parsing from ingestion config")
         ingestion_service = IngestionService(INGESTION_CONFIG)
         pipelines = ingestion_service.pipelines
         logger.info(f"Loaded {len(pipelines)} pipelines from config")
 
-    # Initialize workflow only if not already in session state
     if "workflow" not in st.session_state:
         workflow, rag_service = initialize_workflow(pipelines)
         st.session_state.workflow = workflow
@@ -390,7 +547,6 @@ def main():
         ingestion_state["vector_store_count"] = vector_store_count
         logger.info(f"Vector stores in database: {vector_store_count}")
     else:
-        # Workflow already initialized, just use it from session state
         workflow = st.session_state.workflow
 
     tasks = get_tasks_dict()
@@ -398,21 +554,38 @@ def main():
         not task.done() for task_id, task in tasks.items() if task_id != "__ingestion__"
     )
 
+    AGENT_ICONS = {
+        "Classification": "🔍",
+        "Legal": "⚖️",
+        "Human Resources": "👥",
+        "Sales": "💼",
+        "Procurement": "🛒",
+        "Software Support": "💻",
+        "Pod": "☸️",
+        "Performance": "⚡",
+        "Git": "🔗",
+    }
+
     with st.sidebar:
-        st.subheader("📊 Active Submissions")
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.subheader("💬 Conversations")
+        with col2:
+            if st.button("➕", help="New conversation", use_container_width=True):
+                st.session_state.selected_submission = None
+                st.rerun()
+
         if "active_submissions" not in st.session_state:
             st.session_state.active_submissions = []
 
         if "selected_submission" not in st.session_state:
             st.session_state.selected_submission = None
 
-        # display active submissions as clickable buttons
         if st.session_state.active_submissions:
             for sub_id in st.session_state.active_submissions:
                 is_complete = submission_states.get(sub_id, {}).get("workflow_complete")
                 decision = submission_states.get(sub_id, {}).get("decision", "").lower()
 
-                # Determine status icon: error states (error/unsafe/unknown) show ❌
                 if decision in ("error", "unsafe", "unknown"):
                     status_icon = "❌"
                 elif is_complete:
@@ -425,7 +598,6 @@ def main():
                     question[:30] + "..." if len(question) > 30 else question
                 )
 
-                # Use button to select submission
                 button_type = (
                     "primary"
                     if st.session_state.selected_submission == sub_id
@@ -440,12 +612,30 @@ def main():
                     st.session_state.selected_submission = sub_id
                     st.rerun()
         else:
-            st.info("No active submissions")
+            st.info("No conversations yet")
 
-        if st.button("Clear All Submissions"):
+        if st.button("Clear All Conversations"):
             st.session_state.active_submissions = []
             st.session_state.selected_submission = None
             st.rerun()
+
+        st.divider()
+
+        with st.expander("🤖 Agent Reference", expanded=False):
+            st.markdown("**Available Agents:**")
+            for agent, icon in AGENT_ICONS.items():
+                st.markdown(f"{icon} **{agent}**")
+            st.markdown(
+                """
+                <div style='font-size: 0.85em; color: #666; margin-top: 10px;'>
+                Each agent specializes in different areas:
+                • Classification routes your question
+                • Department agents handle specific topics
+                • Technical agents interact with systems
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     st.title("🤖 Agentic AI Workflow")
     st.markdown(
@@ -463,89 +653,91 @@ def main():
             except Exception as e:
                 st.error(f"Could not display graph: {e}")
 
-    # Show background processing indicator but don't block UI
-    if has_active_tasks:
-        st.info(
-            "⏳ Processing workflows in background... You can submit new questions."
+    if st.session_state.selected_submission:
+        conversation_id = st.session_state.selected_submission
+        conversation_exchanges = conversations.get(conversation_id, [])
+
+        with st.container():
+            for exchange in conversation_exchanges:
+                with st.chat_message("user"):
+                    st.write(exchange.get("input", ""))
+
+                current_state = submission_states.get(
+                    exchange.get("submission_id", ""), exchange
+                )
+
+                _render_exchange_response(current_state, AGENT_ICONS)
+
+    if not st.session_state.selected_submission and not st.session_state.get(
+        "active_submissions"
+    ):
+        st.markdown(
+            """
+            <div style='text-align: center; padding: 50px; color: #666;'>
+                <h3>💬 Start a New Conversation</h3>
+                <p>Ask a question using the chat input below.</p>
+                <p><i>Examples:</i></p>
+                <ul style='list-style: none; padding: 0;'>
+                    <li>• What are the legal implications of using GPL licenses?</li>
+                    <li>• How do I troubleshoot network connectivity issues?</li>
+                    <li>• What are the company's vacation policies?</li>
+                </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-    tab1, tab2 = st.tabs(["📝 Submit Question", "📋 View Results"])
+    if has_active_tasks:
+        st.info(
+            "⏳ Please wait for the current request to complete "
+            "before submitting a new question."
+        )
+        question = None
+    else:
+        question = st.chat_input("Ask a question...", key="chat_input")
 
-    with tab1:
-        st.subheader("Submit a New Question")
-
-        with st.form("question_form", clear_on_submit=True):
-            question = st.text_area(
-                "Enter your question:",
-                placeholder=(
-                    "e.g., What are the legal implications of using GPL licenses?"
-                ),
-                height=100,
-            )
-
-            col1, _ = st.columns([1, 4])
-            with col1:
-                submit_button = st.form_submit_button(
-                    "🚀 Submit", use_container_width=True
-                )
-
-            if submit_button:
-                if not question.strip():
-                    st.error("Please enter a question")
-                else:
-                    submission_id = str(uuid.uuid4())
-
-                    if "active_submissions" not in st.session_state:
-                        st.session_state.active_submissions = []
-                    st.session_state.active_submissions.insert(0, submission_id)
-
-                    # Auto-select the newly submitted question
-                    st.session_state.selected_submission = submission_id
-
-                    submission_states[submission_id] = {  # type: ignore[assignment]
-                        "input": question,
-                        "submission_id": submission_id,
-                        "decision": "",
-                        "classification_message": "Processing...",
-                        "workflow_complete": False,
-                        "mcp_output": "",
-                        "github_issue": "",
-                        "rag_sources": [],
-                        "messages": [],
-                        "namespace": "",
-                        "data": "",
-                        "agent_timings": {},
-                        "rag_query_time": 0.0,
-                        "active_agent": "",
-                    }
-
-                    submit_workflow_task(workflow, question, submission_id)
-
-                    st.success(f"✅ Submitted workflow {submission_id[:8]}...")
-                    st.rerun()
-
-    with tab2:
-        st.subheader("View Submission Results")
-
-        # Display selected submission from sidebar
+    if question:
         if st.session_state.selected_submission:
-            if st.session_state.selected_submission in submission_states:
-                display_submission_details(st.session_state.selected_submission)
-            else:
-                st.error(
-                    f"Submission '{st.session_state.selected_submission[:8]}...' "
-                    "not found in submission states"
-                )
-                st.session_state.selected_submission = None
-                st.rerun()
-        elif st.session_state.get("active_submissions"):
-            st.info("👈 Select a submission from the sidebar to view its details")
+            conversation_id = st.session_state.selected_submission
+            exchange_index = len(conversations.get(conversation_id, []))
         else:
-            st.info(
-                "No submissions yet. Submit a question in the 'Submit Question' tab."
-            )
+            conversation_id = str(uuid.uuid4())
+            exchange_index = 0
+            if "active_submissions" not in st.session_state:
+                st.session_state.active_submissions = []
+            st.session_state.active_submissions.insert(0, conversation_id)
+            st.session_state.selected_submission = conversation_id
+            conversations[conversation_id] = []
 
-    # auto-refresh when there are active tasks
+        submission_id = str(uuid.uuid4())
+
+        exchange_state: "WorkflowState" = {  # type: ignore[assignment]
+            "input": question,
+            "submission_id": submission_id,
+            "conversation_id": conversation_id,
+            "exchange_index": exchange_index,
+            "decision": "",
+            "classification_message": "Processing...",
+            "workflow_complete": False,
+            "mcp_output": "",
+            "github_issue": "",
+            "rag_sources": [],
+            "messages": [],
+            "namespace": "",
+            "data": "",
+            "agent_timings": {},
+            "rag_query_time": 0.0,
+            "active_agent": "",
+            "status_message": "",
+            "status_history": [],
+        }
+
+        conversations[conversation_id].append(exchange_state)
+        submission_states[submission_id] = exchange_state
+
+        submit_workflow_task(workflow, question, submission_id)
+        st.rerun()
+
     if has_active_tasks:
         time.sleep(0.5)
         st.rerun()
@@ -559,7 +751,6 @@ def display_submission_details(submission_id: "str") -> "None":
         st.error("Submission not found")
         return
 
-    # status indicator
     is_complete = state.get("workflow_complete", False)
     decision = state.get("decision", "")
     decision_lower = decision.lower()
@@ -590,7 +781,6 @@ def display_submission_details(submission_id: "str") -> "None":
     with st.expander("📝 Input Question", expanded=True):
         st.write(state.get("input", "N/A"))
 
-    # Display timing information
     agent_timings = state.get("agent_timings", {})
     rag_query_time = state.get("rag_query_time", 0.0)
 
@@ -611,7 +801,6 @@ def display_submission_details(submission_id: "str") -> "None":
                     value=f"{rag_query_time:.2f}s",
                 )
 
-            # Calculate and display total time
             total_agent_time = sum(agent_timings.values()) if agent_timings else 0
             if total_agent_time > 0:
                 st.markdown("**Total Processing Time:**")

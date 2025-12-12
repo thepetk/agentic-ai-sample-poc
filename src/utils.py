@@ -11,8 +11,9 @@ log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
 log_level = getattr(logging, log_level_str, logging.INFO)
 
 logging.basicConfig(level=log_level)
-
 logger = logging.getLogger(__name__)
+
+submission_states: "dict[str, WorkflowState]" = {}
 
 
 def clean_text(text: "str") -> "str":
