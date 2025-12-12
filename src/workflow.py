@@ -1,6 +1,7 @@
 import os
 import time
-from typing import Any
+from typing import Any, cast
+from llama_stack_client.types import ResponseObject
 
 from langgraph.graph import START, StateGraph
 
@@ -44,7 +45,7 @@ class Workflow:
         self.rag_service = rag_service
 
     def _convert_messages_to_openai_format(
-        self, messages_state: "dict[str, Any]"
+        self, messages_state: "WorkflowState | dict[str, Any]"
     ) -> "list[dict[str, str]]":
         """Convert state messages to OpenAI format"""
         messages = []
@@ -81,12 +82,12 @@ class Workflow:
         department_name: "str",
         department_display_name: "str",
         content_override: "str | None" = None,
-        custom_llm: "str" = None,
+        custom_llm: "str | None" = None,
         submission_states: "dict[str, 'WorkflowState'] | None" = None,
         rag_category: "str | None" = None,
         additional_prompt: "str" = "",
         is_terminal: "bool" = False,
-    ) -> "dict[str, str]":
+    ) -> "Any":
         """
         factory function to create department-specific agents with consistent structure.
 
@@ -109,7 +110,7 @@ class Workflow:
         if submission_states is None:
             raise ValueError("submission_states is required")
 
-        def init_message(state: "WorkflowState") -> "dict[str, dict[str, str]]":
+        def init_message(state: "WorkflowState") -> "WorkflowState":
             logger.info(f"init {department_name} message '{state}'")
             if content_override:
                 content = content_override
@@ -125,7 +126,9 @@ class Workflow:
                     user_query=user_query,
                 )
 
-            return {"messages": [{"role": "user", "content": content}]}
+            new_state = dict(state)
+            new_state["messages"] = [{"role": "user", "content": content}]
+            return cast("WorkflowState", new_state)
 
         def llm_node(state: "WorkflowState") -> "WorkflowState":
             logger.debug(f"{department_display_name} LLM node processing")
@@ -184,9 +187,13 @@ class Workflow:
                     state["rag_query_time"] = rag_end_time - rag_start_time
 
                     response_text = extract_rag_response_text(rag_response)
-                    sources = self.rag_service.extract_sources_from_response(
-                        rag_response, rag_category
-                    )
+                    rag_response_obj: "ResponseObject" = cast(ResponseObject, rag_response)  # type: ignore[arg-type]
+                    if rag_category:
+                        sources = self.rag_service.extract_sources_from_response(
+                            rag_response_obj, rag_category
+                        )
+                    else:
+                        sources = []
                     state["rag_sources"] = sources
                     if sources:
                         logger.info(
@@ -245,7 +252,8 @@ class Workflow:
             return state
 
         # Build the agent graph
-        agent_builder = StateGraph(WorkflowState)
+        # Type ignore: StateGraph accepts TypedDict types
+        agent_builder = StateGraph(WorkflowState)  # type: ignore[arg-type]
         agent_builder.add_node(f"{department_name}_set_message", init_message)
         agent_builder.add_node("llm_node", llm_node)
         agent_builder.add_edge(START, f"{department_name}_set_message")
@@ -372,7 +380,7 @@ class Workflow:
         def git_agent_node(state: "WorkflowState") -> "WorkflowState":
             return git_agent(
                 state,
-                openai_client=self.rag_service.client,
+                openai_client=cast("OpenAI | None", self.rag_service.client),  # type: ignore[arg-type]
                 tools_llm=tools_llm,
                 git_token=git_token,
                 github_url=github_url,
@@ -381,16 +389,16 @@ class Workflow:
         def pod_agent_node(state: "WorkflowState") -> "WorkflowState":
             return pod_agent(
                 state,
-                openai_client=self.rag_service.client,
+                openai_client=cast("OpenAI | None", self.rag_service.client),  # type: ignore[arg-type]
                 tools_llm=tools_llm,
             )
 
         def perf_agent_node(state: "WorkflowState") -> "WorkflowState":
             return perf_agent(
-                state, openai_client=self.rag_service.client, tools_llm=tools_llm
+                state, openai_client=cast("OpenAI | None", self.rag_service.client), tools_llm=tools_llm  # type: ignore[arg-type]
             )
 
-        overall_workflow = StateGraph(WorkflowState)
+        overall_workflow = StateGraph(WorkflowState)  # type: ignore[arg-type]
         overall_workflow.add_node(
             "classification_agent",
             classification_node,

@@ -255,10 +255,11 @@ class RAGService:
             ):
                 continue
 
-            if not getattr(output_item, "results", None):
+            results = getattr(output_item, "results", None)
+            if not results:
                 continue
 
-            for result in output_item.results:
+            for result in results:
                 snippet = None
                 file_id = self._get_file_id(result)
 

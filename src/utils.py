@@ -36,7 +36,7 @@ def clean_text(text: "str") -> "str":
 
 def route_to_next_node(
     state: "WorkflowState",
-) -> "list[str]":
+) -> "str":
     if state["decision"] == "legal":
         return "legal_agent"
     elif state["decision"] == "techsupport":
@@ -81,10 +81,14 @@ def extract_rag_response_text(rag_response: "ResponseObject") -> "str":
                     if not hasattr(content, "text"):
                         continue
 
-                    _res_text += content.text + "\n"
+                    text_value = getattr(content, "text", "")
+                    if text_value:
+                        _res_text += str(text_value) + "\n"
 
             elif hasattr(output_item, "text"):
-                _res_text += output_item.text + "\n"
+                text_value = getattr(output_item, "text", "")
+                if text_value:
+                    _res_text += str(text_value) + "\n"
 
         elif output_item.type == "file_search_call":
             queries = getattr(output_item, "queries", [])
@@ -112,22 +116,31 @@ def extract_mcp_output(
             if extract_url:
                 # case: git agent - extract URL from JSON output
                 try:
-                    output_json = json.loads(item.output)
-                    mcp_output = output_json.get("url", item.output)
-                    logger.info(f"{agent_name}: GitHub issue created: {mcp_output}")
-                except (json.JSONDecodeError, AttributeError) as e:
+                    output_value = getattr(item, "output", "")
+                    if isinstance(output_value, str):
+                        output_json = json.loads(output_value)
+                        mcp_output = output_json.get("url", output_value)
+                        logger.info(f"{agent_name}: GitHub issue created: {mcp_output}")
+                    else:
+                        mcp_output = str(output_value) if output_value else ""
+                except (json.JSONDecodeError, AttributeError, TypeError) as e:
                     logger.warning(f"{agent_name}: Failed to parse MCP output: {e}")
-                    mcp_output = item.output if hasattr(item, "output") else ""
+                    mcp_output = str(getattr(item, "output", ""))
             else:
                 # case: other agents - return raw output
-                mcp_output = item.output
+                output_value = getattr(item, "output", "")
+                mcp_output = str(output_value) if output_value else ""
                 logger.info(f"{agent_name}: MCP call completed")
-                logger.debug(f"{agent_name}: MCP output: {item.output}")
+                logger.debug(f"{agent_name}: MCP output: {mcp_output}")
 
             break
 
         else:
-            if hasattr(item, "content") and len(item.content) > 0:
-                logger.debug(f"{agent_name} response message: {item.content[0].text}")
+            content_attr = getattr(item, "content", None)
+            if content_attr and isinstance(content_attr, list) and len(content_attr) > 0:
+                first_content = content_attr[0]
+                text_value = getattr(first_content, "text", None)
+                if text_value:
+                    logger.debug(f"{agent_name} response message: {text_value}")
 
     return mcp_output
