@@ -303,6 +303,7 @@ def pod_agent(
 
         state["mcp_output"] = extract_mcp_output(resp, agent_name="pod_agent")
     except Exception as e:
+        state["mcp_output"] = "K8s MCP Server not available"
         logger.info(
             f"K8s Agent unsuccessful return MCP request "
             f"for submission {state['submission_id']} with error: '{e}'"
@@ -359,6 +360,7 @@ def perf_agent(
 
         state["mcp_output"] = extract_mcp_output(resp, agent_name="perf_agent")
     except Exception as e:
+        state["mcp_output"] = "K8s MCP server not available"
         logger.info(
             f"K8s perf Agent unsuccessful return MCP request "
             f"for submission {state['submission_id']} with error: '{e}'"
