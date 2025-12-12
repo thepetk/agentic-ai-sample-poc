@@ -1,5 +1,8 @@
 import time
+from typing import Any, cast
 
+from llama_stack_client.types import ResponseObject
+from openai.types.chat import ChatCompletionUserMessageParam
 from openai import OpenAI
 
 from src.exceptions import AgentRunMethodParameterError
@@ -45,16 +48,16 @@ def classification_agent(
         if not moderation.flagged:
             continue
 
-        # TODO: decide log level
         logger.info(
             f"Classification result: '{state['input']}' is flagged as '{moderation}'"
         )
         state["decision"] = "unsafe"
         state["data"] = state["input"]
         state["workflow_complete"] = True
+        model_extra = moderation.categories.model_extra
         flagged_categories = [
             key
-            for key, value in moderation.categories.model_extra.items()
+            for key, value in (model_extra.items() if model_extra else [])
             if value is True
         ]
         categories_str = ", ".join(flagged_categories)
@@ -66,16 +69,20 @@ def classification_agent(
 
     # Use OpenAI client for structured output with Pydantic models
     try:
-        completion = openai_client.beta.chat.completions.parse(
-            model=topic_llm,
-            messages=[
+        messages: "list[ChatCompletionUserMessageParam]" = [
+            cast(
+                ChatCompletionUserMessageParam,
                 {
                     "role": "user",
                     "content": WorkflowAgentPrompts.CLASIFICATION_PROMPT.format(
                         state_input=state["input"]
                     ),
-                }
-            ],
+                },
+            )
+        ]
+        completion = openai_client.beta.chat.completions.parse(
+            model=topic_llm,
+            messages=messages,
             response_format=ClassificationModel,
         )
 
@@ -154,16 +161,20 @@ def support_classification_agent(
         )
 
     try:
-        completion = openai_client.beta.chat.completions.parse(
-            model=topic_llm,
-            messages=[
+        messages: "list[ChatCompletionUserMessageParam]" = [
+            cast(
+                ChatCompletionUserMessageParam,
                 {
                     "role": "user",
                     "content": WorkflowAgentPrompts.SUPPORT_CLASIFICATION_PROMPT.format(
                         state_input=state["input"]
                     ),
-                }
-            ],
+                },
+            )
+        ]
+        completion = openai_client.beta.chat.completions.parse(
+            model=topic_llm,
+            messages=messages,
             response_format=SupportClassificationModel,
         )
 
@@ -226,7 +237,7 @@ def git_agent(
     if not tools_llm:
         raise AgentRunMethodParameterError("tools_llm is required in git agent")
 
-    openai_mcp_tool = {
+    openai_mcp_tool: "dict[str, Any]" = {
         "type": "mcp",
         "server_label": "github",
         "server_url": "https://api.githubcopilot.com/mcp/",
@@ -236,7 +247,8 @@ def git_agent(
 
     try:
         logger.info("git_agent GIT calling response api")
-        resp = openai_client.responses.create(
+        # Type ignore: OpenAI SDK accepts dict for tools, type checker doesn't recognize MCP tool format
+        resp = openai_client.responses.create(  # type: ignore[arg-type]
             model=tools_llm,
             input=WorkflowAgentPrompts.GIT_PROMPT.format(
                 github_url=github_url,
@@ -244,13 +256,13 @@ def git_agent(
                 user_question=state["input"],
                 initial_classification=state["mcp_output"],
             ),
-            tools=[openai_mcp_tool],
+            tools=[openai_mcp_tool],  # type: ignore[arg-type]
         )
         logger.debug("git_agent response returned")
 
-        # Extract GitHub issue URL from MCP call output
+        resp_obj: "ResponseObject" = cast(ResponseObject, resp)
         state["github_issue"] = extract_mcp_output(
-            resp, agent_name="git_agent", extract_url=True
+            resp_obj, agent_name="git_agent", extract_url=True
         )
     except Exception as e:
         logger.info(f"git_agent Tool failed with error: '{e}'")
@@ -282,7 +294,7 @@ def pod_agent(
     if not tools_llm:
         raise AgentRunMethodParameterError("tools_llm is required in git agent")
 
-    openai_mcp_tool = {
+    openai_mcp_tool: "dict[str, Any]" = {
         "type": "mcp",
         "server_label": "OpenShift / Kubernetes MCP Tools",
         "server_url": "http://localhost:8080/mcp",
@@ -294,17 +306,19 @@ def pod_agent(
         logger.debug(
             f"K8S Agent making MCP request for submission: {state['submission_id']}"
         )
-        resp = openai_client.responses.create(
+        # Type ignore: OpenAI SDK accepts dict for tools, type checker doesn't recognize MCP tool format
+        resp = openai_client.responses.create(  # type: ignore[arg-type]
             model=tools_llm,
             input=WorkflowAgentPrompts.POD_PROMPT.format(namespace=state["namespace"]),
-            tools=[openai_mcp_tool],
+            tools=[openai_mcp_tool],  # type: ignore[arg-type]
         )
         logger.debug(
             f"K8S Agent successful return MCP request "
             f"for submission: {state['submission_id']}"
         )
 
-        state["mcp_output"] = extract_mcp_output(resp, agent_name="pod_agent")
+        resp_obj: "ResponseObject" = cast(ResponseObject, resp)
+        state["mcp_output"] = extract_mcp_output(resp_obj, agent_name="pod_agent")
     except Exception as e:
         state["mcp_output"] = "K8s MCP Server not available"
         logger.info(
@@ -339,7 +353,7 @@ def perf_agent(
     if not tools_llm:
         raise AgentRunMethodParameterError("tools_llm is required in git agent")
 
-    openai_mcp_tool = {
+    openai_mcp_tool: "dict[str, Any]" = {
         "type": "mcp",
         "server_label": "OpenShift / Kubernetes MCP Tools",
         "server_url": "http://localhost:8080/mcp",
@@ -352,17 +366,22 @@ def perf_agent(
             f"K8S perf Agent making MCP request "
             f"for submission: {state['submission_id']}"
         )
-        resp = openai_client.responses.create(
+        # Type ignore: OpenAI SDK accepts dict for tools, type checker doesn't recognize MCP tool format
+        resp = openai_client.responses.create(  # type: ignore[arg-type]
             model=tools_llm,
             input=WorkflowAgentPrompts.PERF_PROMPT.format(namespace=state["namespace"]),
-            tools=[openai_mcp_tool],
+            tools=[openai_mcp_tool],  # type: ignore[arg-type]
         )
         logger.debug(
             f"K8S perf Agent successful return MCP request "
             f"for submission: {state['submission_id']}"
         )
 
-        state["mcp_output"] = extract_mcp_output(resp, agent_name="perf_agent")
+        # Convert OpenAI Response to ResponseObject format expected by extract_mcp_output
+        from llama_stack_client.types import ResponseObject
+
+        resp_obj: "ResponseObject" = cast(ResponseObject, resp)
+        state["mcp_output"] = extract_mcp_output(resp_obj, agent_name="perf_agent")
     except Exception as e:
         state["mcp_output"] = "K8s MCP server not available"
         logger.info(

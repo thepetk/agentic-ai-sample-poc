@@ -4,7 +4,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import requests
 import yaml
@@ -101,22 +101,32 @@ class IngestionService:
 
         for p_title in raw_pipelines:
             logger.debug(f"Parsing pipeline {p_title}...")
-            _pipeline_config: "dict[str, str]" = raw_pipelines[p_title]
+            _pipeline_config: "dict[str, Any]" = raw_pipelines[p_title]
             logger.debug(f"Pipeline {p_title} type: {_pipeline_config['source']}")
 
             if _pipeline_config["source"] == SourceTypes.GITHUB:
+                config = _pipeline_config.get("config")
+                if not isinstance(config, dict):
+                    logger.error(
+                        f"Pipeline '{p_title}' has invalid config: expected dict"
+                    )
+                    continue
                 source_config = SourceConfig(
-                    url=_pipeline_config["config"].get("url", ""),
-                    branch=_pipeline_config["config"].get("branch", "main"),
-                    path=_pipeline_config["config"].get("path", ""),
+                    url=config.get("url", "") if isinstance(config.get("url"), str) else "",
+                    branch=config.get("branch", "main") if isinstance(config.get("branch"), str) else "main",
+                    path=config.get("path", "") if isinstance(config.get("path"), str) else "",
                     urls=None,
                 )
             elif _pipeline_config["source"] == SourceTypes.URL:
+                urls_value = _pipeline_config.get("urls", [])
+                urls_list: "list[str]" = (
+                    urls_value if isinstance(urls_value, list) else []
+                )
                 source_config = SourceConfig(
                     url="",
                     branch="",
                     path="",
-                    urls=_pipeline_config.get("urls", []),
+                    urls=urls_list,
                 )
             else:
                 logger.error(
@@ -125,12 +135,20 @@ class IngestionService:
                 )
                 continue
 
+            enabled_value = _pipeline_config.get("enabled", False)
+            enabled_bool = bool(enabled_value) if not isinstance(enabled_value, bool) else enabled_value
+
+            source_value = _pipeline_config.get("source")
+            if not isinstance(source_value, str):
+                logger.error(f"Pipeline '{p_title}' has invalid source type")
+                continue
+
             pipeline = Pipeline(
-                name=_pipeline_config["name"],
-                enabled=_pipeline_config["enabled"],
-                version=_pipeline_config["version"],
+                name=str(_pipeline_config["name"]),
+                enabled=enabled_bool,
+                version=str(_pipeline_config["version"]),
                 vector_store_name=f"{_pipeline_config['vector_store_name']}",
-                source=_pipeline_config["source"],
+                source=source_value,
                 source_config=source_config,
             )
             pipelines.append(pipeline)
@@ -228,9 +246,24 @@ class IngestionService:
                 # recursive fetch of directory contents
                 try:
                     sub_contents = repo.get_contents(content.path, ref=branch)
-                    pdf_files = self._fetch_github_dir_contents(
-                        sub_contents, content.path, branch, path, download_dir
-                    )
+                    from github.ContentFile import ContentFile
+
+                    if isinstance(sub_contents, list):
+                        contents_list: "list[ContentFile]" = [
+                            c for c in sub_contents if isinstance(c, ContentFile)
+                        ]
+                        pdf_files.extend(
+                            self._fetch_github_dir_contents(
+                                repo, contents_list, branch, path, download_dir
+                            )
+                        )
+                    elif isinstance(sub_contents, ContentFile):
+                        # Single file, not a directory
+                        if sub_contents.name.lower().endswith(".pdf"):
+                            local_file_path = self._create_local_file(
+                                sub_contents, path, download_dir
+                            )
+                            pdf_files.append(local_file_path)
                 except Exception as e:
                     logger.error(f"Error accessing directory {content.path}: {e}")
             # handle pdf files
@@ -302,8 +335,12 @@ class IngestionService:
             contents = repo.get_contents(path if path else "", ref=branch)
 
             if isinstance(contents, list):
+                from github.ContentFile import ContentFile
+                contents_list: "list[ContentFile]" = [
+                    c for c in contents if isinstance(c, ContentFile)
+                ]
                 pdf_files = self._fetch_github_dir_contents(
-                    repo, contents, branch, path, download_dir
+                    repo, contents_list, branch, path, download_dir
                 )
             elif contents.name.lower().endswith(".pdf"):
                 local_file_path = self._create_local_file(contents, path, download_dir)
@@ -488,14 +525,26 @@ class IngestionService:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             if source == SourceTypes.GITHUB:
+                path_value = pipeline.source_config.path
+                if path_value is None:
+                    logger.error(
+                        f"Pipeline '{pipeline.name}' has None path for GitHub source"
+                    )
+                    return False
                 pdf_files = self.fetch_from_github(
                     pipeline.source_config.url,
-                    pipeline.source_config.path,
+                    path_value,
                     pipeline.source_config.branch,
                     temp_dir,
                 )
             elif source == SourceTypes.URL:
-                pdf_files = self.fetch_from_url(pipeline.source_config.urls, temp_dir)
+                urls_value = pipeline.source_config.urls
+                if urls_value is None:
+                    logger.error(
+                        f"Pipeline '{pipeline.name}' has None urls for URL source"
+                    )
+                    return False
+                pdf_files = self.fetch_from_url(urls_value, temp_dir)
             else:
                 logger.error(f"Unknown source type: {source}")
                 return False
