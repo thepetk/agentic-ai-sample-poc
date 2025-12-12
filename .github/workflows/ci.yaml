@@ -26,6 +26,5 @@ jobs:
       - name: Run type check
         run: make ty
 
-      # TODO: Enable tests when they are available
-      # - name: Run tests
-      #   run: make test
+      - name: Run tests
+        run: make test

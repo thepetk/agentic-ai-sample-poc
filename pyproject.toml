@@ -37,6 +37,3 @@ ignore = []
 
 [tool.ruff.lint.isort]
 known-first-party = ["src"]
-
-[[tool.ty.overrides]]
-include = ["src", "streamlit_app.py"]

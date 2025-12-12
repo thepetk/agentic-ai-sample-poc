@@ -195,12 +195,10 @@ class Workflow:
                     state["rag_query_time"] = rag_end_time - rag_start_time
 
                     response_text = extract_rag_response_text(rag_response)
-                    from llama_stack_client.types import ResponseObject
-
                     rag_response_obj: "ResponseObject" = cast(
                         ResponseObject, rag_response
                     )  # type: ignore[arg-type]
-                    # self.rag_service is guaranteed to be not None here
+
                     if rag_category:
                         sources = self.rag_service.extract_sources_from_response(
                             rag_response_obj, rag_category
@@ -265,7 +263,6 @@ class Workflow:
             return state
 
         # Build the agent graph
-        # Type ignore: StateGraph accepts TypedDict types
         agent_builder = StateGraph(WorkflowState)  # type: ignore[arg-type]
         agent_builder.add_node(f"{department_name}_set_message", init_message)
         agent_builder.add_node("llm_node", llm_node)
@@ -411,7 +408,6 @@ class Workflow:
             )
 
         def perf_agent_node(state: "WorkflowState") -> "WorkflowState":
-            # Type ignore: LlamaStackClient is compatible with OpenAI
             return perf_agent(
                 state,
                 openai_client=cast("OpenAI | None", self.rag_service.client),  # type: ignore[arg-type]

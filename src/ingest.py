@@ -256,12 +256,13 @@ class IngestionService:
                 # recursive fetch of directory contents
                 try:
                     sub_contents = repo.get_contents(content.path, ref=branch)
-                    from github.ContentFile import ContentFile
-
                     if isinstance(sub_contents, list):
-                        contents_list: "list[ContentFile]" = [
-                            c for c in sub_contents if isinstance(c, ContentFile)
-                        ]
+                        contents_list: "list[ContentFile]" = []
+                        for c in sub_contents:
+                            if isinstance(c, ContentFile):
+                                contents_list.append(c)
+                            elif hasattr(c, "type") and hasattr(c, "name"):
+                                contents_list.append(c)  # type: ignore[arg-type]
                         pdf_files.extend(
                             self._fetch_github_dir_contents(
                                 repo, contents_list, branch, path, download_dir
@@ -345,11 +346,12 @@ class IngestionService:
             contents = repo.get_contents(path if path else "", ref=branch)
 
             if isinstance(contents, list):
-                from github.ContentFile import ContentFile
-
-                contents_list: "list[ContentFile]" = [
-                    c for c in contents if isinstance(c, ContentFile)
-                ]
+                contents_list: "list[ContentFile]" = []
+                for c in contents:
+                    if isinstance(c, ContentFile):
+                        contents_list.append(c)
+                    elif hasattr(c, "type") and hasattr(c, "name"):
+                        contents_list.append(c)  # type: ignore[arg-type]
                 pdf_files = self._fetch_github_dir_contents(
                     repo, contents_list, branch, path, download_dir
                 )

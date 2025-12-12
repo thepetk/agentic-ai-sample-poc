@@ -13,7 +13,7 @@ ruff: ## Run ruff for formatting and linting
 
 .PHONY: ty
 ty: ## Run type check with ty
-	uvx ty check
+	uvx ty check src streamlit_app.py
 
 .PHONY: test
 test: ## Run tests with pytest

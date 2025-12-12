@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 import streamlit as st
+from llama_stack_client import LlamaStackClient
 
 from src.constants import (
     DEFAULT_INFERENCE_MODEL,
@@ -14,7 +15,7 @@ from src.constants import (
 )
 from src.ingest import IngestionService
 from src.responses import RAGService
-from src.types import Pipeline
+from src.types import Pipeline, WorkflowState
 from src.utils import logger
 from src.workflow import Workflow, submission_states
 
@@ -112,8 +113,6 @@ def count_vector_stores() -> "int":
     count the number of vector stores in the database
     """
     try:
-        from llama_stack_client import LlamaStackClient
-
         client = LlamaStackClient(base_url=LLAMA_STACK_URL)
         vector_stores = client.vector_stores.list() or []
         vector_store_list = list(vector_stores)
@@ -238,7 +237,6 @@ async def run_workflow_task(
         logger.info(f"Starting workflow task for submission {submission_id}")
 
         # Execute workflow using asyncio.to_thread to avoid blocking
-        # Type ignore: Compiled workflow has invoke method
         result = await asyncio.to_thread(
             workflow.invoke,  # type: ignore[attr-defined]
             {
@@ -260,7 +258,6 @@ async def run_workflow_task(
         )
 
         # Update submission_states with the final workflow result
-        # Type ignore: result is compatible with WorkflowState
         submission_states[submission_id] = result  # type: ignore[assignment]
         logger.info(
             f"Workflow task completed for submission {submission_id}: "
@@ -269,7 +266,7 @@ async def run_workflow_task(
         )
     except Exception as e:
         logger.error(f"Workflow task failed for submission {submission_id}: {e}")
-        submission_states[submission_id] = {
+        error_state: "WorkflowState" = {
             "input": question,
             "submission_id": submission_id,
             "decision": "error",
@@ -285,6 +282,7 @@ async def run_workflow_task(
             "rag_query_time": 0.0,
             "active_agent": "",
         }
+        submission_states[submission_id] = error_state
 
 
 def progress_event_loop() -> "None":
@@ -500,7 +498,6 @@ def main():
                         st.session_state.active_submissions = []
                     st.session_state.active_submissions.insert(0, submission_id)
 
-                    # Type ignore: dict is compatible with WorkflowState
                     submission_states[submission_id] = {  # type: ignore[assignment]
                         "input": question,
                         "submission_id": submission_id,
