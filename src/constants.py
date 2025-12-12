@@ -26,6 +26,10 @@ DEFAULT_HTTP_REQUEST_TIMEOUT = 60
 # used by the RAGService.
 DEFAULT_INFERENCE_MODEL = "vllm/qwen3-8b-fp8"
 
+# DEFAULT_MCP_TOOL_MODEL: The default model used for
+# MCP tool calls.
+DEFAULT_MCP_TOOL_MODEL = "vllm/qwen3-8b-fp8"
+
 # DEFAULT_INGESTION_CONFIG: The default path to the ingestion
 # configuration file.
 DEFAULT_INGESTION_CONFIG = "config/ingestion_config.yaml"

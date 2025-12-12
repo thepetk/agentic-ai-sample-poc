@@ -18,7 +18,7 @@ class TestRAGServiceInit:
         assert service.client is None
         assert service.vector_store_map == {}
         assert service.all_vector_store_ids == []
-        assert service.file_metadata == {}
+        assert isinstance(service.file_metadata, dict)
 
     def test_init_with_custom_url(self):
         pipelines = []

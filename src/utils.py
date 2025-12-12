@@ -36,7 +36,14 @@ def clean_text(text: "str") -> "str":
 
 def route_to_next_node(
     state: "WorkflowState",
-) -> "str":
+) -> Literal[
+    "legal_agent",
+    "support_agent",
+    "hr_agent",
+    "sales_agent",
+    "procurement_agent",
+    "__end__",
+]:
     if state["decision"] == "legal":
         return "legal_agent"
     elif state["decision"] == "techsupport":

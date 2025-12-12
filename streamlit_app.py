@@ -12,6 +12,7 @@ from src.constants import (
     DEFAULT_INFERENCE_MODEL,
     DEFAULT_INGESTION_CONFIG,
     DEFAULT_LLAMA_STACK_URL,
+    DEFAULT_MCP_TOOL_MODEL,
 )
 from src.ingest import IngestionService
 from src.responses import RAGService
@@ -25,7 +26,7 @@ INFERENCE_SERVER_OPENAI = os.getenv(
 )
 INFERENCE_MODEL = os.getenv("INFERENCE_MODEL", DEFAULT_INFERENCE_MODEL)
 GUARDRAIL_MODEL = os.getenv("GUARDRAIL_MODEL", "ollama/llama-guard3:8b")
-MCP_TOOL_MODEL = os.getenv("MCP_TOOL_MODEL", "ollama/llama3.2:3b")
+MCP_TOOL_MODEL = os.getenv("MCP_TOOL_MODEL", DEFAULT_MCP_TOOL_MODEL)
 GIT_TOKEN = os.getenv("GIT_TOKEN", "not applicable")
 GITHUB_URL = os.getenv("GITHUB_URL", "not applicable")
 GITHUB_ID = os.getenv("GITHUB_ID", "not applicable")

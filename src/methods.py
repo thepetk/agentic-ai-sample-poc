@@ -52,7 +52,6 @@ def classification_agent(
         )
         state["decision"] = "unsafe"
         state["data"] = state["input"]
-        state["workflow_complete"] = True
         model_extra = moderation.categories.model_extra
         flagged_categories = [
             key
@@ -64,6 +63,7 @@ def classification_agent(
             f"Classification result: '{state['input']}' "
             f"is flagged for: {categories_str}"
         )
+        state["workflow_complete"] = True
         return state
 
     # Use OpenAI client for structured output with Pydantic models
@@ -94,8 +94,8 @@ def classification_agent(
             logger.error("Failed to get structured response from the model.")
             state["decision"] = "unknown"
             state["data"] = state["input"]
-            state["workflow_complete"] = True
             state["classification_message"] = "Unable to determine request type."
+            state["workflow_complete"] = True
             return state
 
         if classification_result.classification not in (
@@ -113,16 +113,16 @@ def classification_agent(
             )
             state["decision"] = "unknown"
             state["data"] = state["input"]
-            state["workflow_complete"] = True
             state["classification_message"] = "Unable to determine request type."
+            state["workflow_complete"] = True
             return state
 
     except Exception as e:
         logger.error(f"Classification failed: {e}")
         state["decision"] = "unknown"
         state["data"] = state["input"]
-        state["workflow_complete"] = True
         state["classification_message"] = f"Classification error: {str(e)[:100]}"
+        state["workflow_complete"] = True
         return state
     logger.info(
         f"Classification result: {classification_result} for input '{state['input']}'"
@@ -266,6 +266,7 @@ def git_agent(
 
     agent_end_time = time.time()
     state["agent_timings"]["Git"] = agent_end_time - agent_start_time
+    state["workflow_complete"] = True
 
     return state
 
