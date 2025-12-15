@@ -201,10 +201,10 @@ async def run_ingestion_pipeline() -> "None":
         ingestion_service = await asyncio.to_thread(IngestionService, INGESTION_CONFIG)
 
         ingestion_state["message"] = (
-            "Running ingestion pipeline (this may take a while)..."
+            "Running ingestion pipeline in parallel mode (faster processing)..."
         )
-        logger.info("Running ingestion pipeline...")
-        ingested_items = await asyncio.to_thread(ingestion_service.run)
+        logger.info("Running ingestion pipeline (async parallel mode)...")
+        ingested_items = await ingestion_service.run_async()
 
         # store pipelines from ingestion service
         ingestion_state["pipelines"] = ingestion_service.pipelines
