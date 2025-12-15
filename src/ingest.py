@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import sys
@@ -6,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import httpx
 import requests
 import yaml
 from docling.datamodel.base_models import InputFormat
@@ -73,6 +75,10 @@ class IngestionService:
             chunk_size_in_tokens=_chunk_size_in_tokens,
         )
         self.file_metadata = {}
+
+        # Async locks for thread-safe operations
+        self._vector_store_lock = asyncio.Lock()
+        self._metadata_lock = asyncio.Lock()
 
         # Document converter setup
         pipeline_options = PdfPipelineOptions()
@@ -400,6 +406,55 @@ class IngestionService:
         logger.debug(f"Downloaded {len(pdf_files)} PDF files from URLs")
         return pdf_files
 
+    async def fetch_from_url_async(
+        self, urls: "list[str]", temp_dir: "str"
+    ) -> "list[str]":
+        """
+        fetches asynchronously documents from direct URLs
+        in parallel using httpx.
+        """
+        pdf_files: "list[str]" = []
+        logger.debug(f"Fetching {len(urls)} documents from URLs (async)")
+
+        download_dir = os.path.join(temp_dir, "url_files")
+        os.makedirs(download_dir, exist_ok=True)
+
+        async def download_single_url(
+            client: "httpx.AsyncClient", url: "str"
+        ) -> "str | None":
+            """Download a single URL"""
+            filename = os.path.basename(url.split("?")[0])
+            if not filename.lower().endswith(".pdf"):
+                filename += ".pdf"
+
+            file_path = os.path.join(download_dir, filename)
+
+            logger.debug(f"Downloading document from url: {url}")
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+
+                with open(file_path, "wb") as f:
+                    f.write(response.content)
+
+                logger.debug(f"Successfully downloaded: {filename}")
+                return file_path
+
+            except Exception as e:
+                logger.error(f"Error downloading {url}: {e}")
+                return None
+
+        async with httpx.AsyncClient(timeout=DEFAULT_HTTP_REQUEST_TIMEOUT) as client:
+            tasks = [download_single_url(client, url) for url in urls]
+            results = await asyncio.gather(*tasks)
+
+        pdf_files = [f for f in results if f is not None]
+
+        logger.info(
+            f"Downloaded {len(pdf_files)}/{len(urls)} PDF files from URLs (async)"
+        )
+        return pdf_files
+
     def process_documents(
         self, pdf_files: "list[str]", github_base_url="", category=""
     ) -> "list[File]":
@@ -454,6 +509,76 @@ class IngestionService:
         logger.info(f"Total documents processed: {len(llama_documents)}")
         return llama_documents
 
+    async def process_documents_async(
+        self, pdf_files: "list[str]", github_base_url="", category=""
+    ) -> "list[File]":
+        """
+        processes asynchronously PDF files in parallel using docling.
+        """
+        logger.info(
+            f"Processing {len(pdf_files)} documents with docling (async parallel)..."
+        )
+
+        async def process_single_document(file_path: "str") -> "File | None":
+            """Process a single PDF document"""
+            try:
+                original_filename = os.path.basename(file_path)
+                logger.info(f"Processing document: {original_filename}")
+
+                result = await asyncio.to_thread(self.converter.convert, file_path)
+
+                markdown_text = result.document.export_to_markdown()
+                cleaned_text = clean_text(markdown_text)
+
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".txt", delete=False, encoding="utf-8"
+                ) as tmp_file:
+                    tmp_file.write(cleaned_text)
+                    tmp_file_path = tmp_file.name
+
+                try:
+                    file_create_response = await asyncio.to_thread(
+                        self.client.files.create,
+                        file=Path(tmp_file_path),
+                        purpose="assistants",
+                    )
+
+                    file_id = file_create_response.id
+                    github_url = (
+                        f"{github_base_url}/{original_filename}"
+                        if github_base_url
+                        else ""
+                    )
+
+                    # Thread-safe metadata update
+                    async with self._metadata_lock:
+                        self.file_metadata[file_id] = {
+                            "original_filename": original_filename,
+                            "github_url": github_url,
+                            "category": category,
+                        }
+                    logger.info(f"Mapped file_id '{file_id}' -> '{original_filename}'")
+
+                    return file_create_response
+                finally:
+                    if os.path.exists(tmp_file_path):
+                        os.unlink(tmp_file_path)
+
+            except Exception as e:
+                logger.error(f"Error processing {file_path}: {e}")
+                return None
+
+        tasks = [process_single_document(file_path) for file_path in pdf_files]
+        results = await asyncio.gather(*tasks)
+
+        llama_documents = [doc for doc in results if doc is not None]
+
+        logger.info(
+            f"Total documents processed: "
+            f"{len(llama_documents)}/{len(pdf_files)} (async)"
+        )
+        return llama_documents
+
     def create_vector_db(
         self, vector_store_name: "str", documents: "list[File]"
     ) -> "bool":
@@ -505,6 +630,100 @@ class IngestionService:
                     f"with resp '{file_ingest_response}'"
                 )
             return True
+
+        except Exception as e:
+            logger.error(f"Error inserting documents into '{vector_store_name}': {e}")
+            return False
+
+    async def create_vector_db_async(
+        self, vector_store_name: "str", documents: "list[File]"
+    ) -> "bool":
+        """
+        creates vector database and inserts documents in parallel.
+        """
+        if not documents:
+            logger.warning(f"No documents to insert for {vector_store_name}")
+            return False
+
+        logger.info(f"Creating vector database: {vector_store_name} (async)")
+
+        vector_store = None
+        # Use lock to prevent race conditions when creating vector stores
+        async with self._vector_store_lock:
+            try:
+                vector_store = await asyncio.to_thread(
+                    self.client.vector_stores.create, name=vector_store_name
+                )
+                self.vector_store_ids.append(vector_store.id)
+                logger.info(
+                    f"Successfully created vector store '{vector_store_name}' "
+                    f"with ID: {vector_store.id}"
+                )
+            except Exception as e:
+                error_msg = str(e)
+                if "already exists" in error_msg.lower():
+                    logger.info(
+                        f"Vector DB '{vector_store_name}' already exists, continuing..."
+                    )
+
+                    vector_stores = await asyncio.to_thread(
+                        self.client.vector_stores.list
+                    )
+                    vector_stores = vector_stores or []
+                    for vs in vector_stores:
+                        if vs.name == vector_store_name:
+                            vector_store = vs
+                            if vs.id not in self.vector_store_ids:
+                                self.vector_store_ids.append(vs.id)
+                            break
+
+                    if vector_store is None:
+                        logger.error(
+                            f"Could not find existing vector store "
+                            f"'{vector_store_name}'"
+                        )
+                        return False
+                else:
+                    logger.error(
+                        f"Failed to register vector DB '{vector_store_name}': {e}"
+                    )
+                    return False
+
+        try:
+            logger.info(
+                f"Inserting {len(documents)} documents into vector store (parallel)..."
+            )
+
+            async def upload_single_document(doc: "File") -> "bool":
+                """Upload a single document to the vector store"""
+                try:
+                    await asyncio.to_thread(
+                        self.client.vector_stores.files.create,
+                        vector_store_id=vector_store.id,
+                        file_id=doc.id,
+                    )
+                    logger.debug(
+                        f"✓ Successfully inserted document {doc.id} into "
+                        f"'{vector_store_name}'"
+                    )
+                    return True
+                except Exception as e:
+                    logger.error(
+                        f"Error inserting document {doc.id} into "
+                        f"'{vector_store_name}': {e}"
+                    )
+                    return False
+
+            tasks = [upload_single_document(doc) for doc in documents]
+            results = await asyncio.gather(*tasks)
+
+            success_count = sum(1 for r in results if r)
+            logger.info(
+                f"✓ Successfully inserted {success_count}/{len(documents)} documents "
+                f"into '{vector_store_name}' (async)"
+            )
+
+            return success_count > 0
 
         except Exception as e:
             logger.error(f"Error inserting documents into '{vector_store_name}': {e}")
@@ -574,6 +793,77 @@ class IngestionService:
 
             return self.create_vector_db(vector_store_name, documents)
 
+    async def process_pipeline_async(self, pipeline: "Pipeline") -> "bool":
+        """
+        processes asynchronously a single pipeline.
+        """
+        logger.info(f"Processing pipeline: {pipeline.name} (async)")
+
+        if pipeline.enabled is False:
+            logger.info(f"Pipeline '{pipeline.name}' is disabled, skipping")
+            return True
+
+        vector_store_name = pipeline.vector_store_name
+        source = pipeline.source
+
+        category = (
+            vector_store_name.split("-")[0] if vector_store_name else pipeline.name
+        )
+
+        github_base_url = ""
+        if source == SourceTypes.GITHUB:
+            github_url = pipeline.source_config.url.rstrip(".git").rstrip("/")
+            github_base_url = (
+                f"{github_url}/blob/"
+                f"{pipeline.source_config.branch}/"
+                f"{pipeline.source_config.path}".rstrip("/")
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            if source == SourceTypes.GITHUB:
+                path_value = pipeline.source_config.path
+                if path_value is None:
+                    logger.error(
+                        f"Pipeline '{pipeline.name}' has None path for GitHub source"
+                    )
+                    return False
+                # Use sync version for GitHub (as requested, skip GitHub async)
+                pdf_files = await asyncio.to_thread(
+                    self.fetch_from_github,
+                    pipeline.source_config.url,
+                    path_value,
+                    pipeline.source_config.branch,
+                    temp_dir,
+                )
+            elif source == SourceTypes.URL:
+                urls_value = pipeline.source_config.urls
+                if urls_value is None:
+                    logger.error(
+                        f"Pipeline '{pipeline.name}' has None urls for URL source"
+                    )
+                    return False
+                # Use async version for URL downloads
+                pdf_files = await self.fetch_from_url_async(urls_value, temp_dir)
+            else:
+                logger.error(f"Unknown source type: {source}")
+                return False
+
+            if not pdf_files:
+                logger.warning(f"No PDF files found for pipeline '{pipeline.name}'")
+                return False
+
+            # Use async version for document processing
+            documents = await self.process_documents_async(
+                pdf_files, github_base_url, category
+            )
+
+            if not documents:
+                logger.warning(f"No documents processed for pipeline '{pipeline.name}'")
+                return False
+
+            # Use async version for vector DB creation
+            return await self.create_vector_db_async(vector_store_name, documents)
+
     def save_file_metadata(
         self, output_path: "str" = "rag_file_metadata.json"
     ) -> "None":
@@ -637,4 +927,65 @@ class IngestionService:
             logger.info("All pipelines completed successfully!")
 
         # Save file metadata for RAG source references
+        self.save_file_metadata()
+
+    async def run_async(self) -> "None":
+        """
+        Async version: Runs the ingestion service with pipelines processed in parallel.
+        """
+        logger.info("Starting RAG Ingestion Service (async parallel mode)")
+        logger.info(f"Configuration: {os.path.abspath('ingestion-config.yaml')}")
+        total = len(self.pipelines)
+
+        async def process_with_result(pipeline: "Pipeline") -> "tuple[str, bool, bool]":
+            """
+            process a pipeline and return (name, success, was_skipped)
+            """
+            if pipeline.enabled is False:
+                logger.debug(f"Pipeline '{pipeline.name}' is disabled, skipping")
+                return (pipeline.name, False, True)
+
+            try:
+                logger.info(f"Starting pipeline: {pipeline.name}")
+                success = await self.process_pipeline_async(pipeline)
+                if success:
+                    logger.info(f"✓ Pipeline '{pipeline.name}' completed successfully")
+                else:
+                    logger.warning(f"✗ Pipeline '{pipeline.name}' failed")
+                return (pipeline.name, success, False)
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error processing pipeline '{pipeline.name}': {e}",
+                    exc_info=True,
+                )
+                return (pipeline.name, False, False)
+
+        tasks = [process_with_result(pipeline) for pipeline in self.pipelines]
+        results = await asyncio.gather(*tasks)
+
+        successful = sum(
+            1 for _, success, skipped in results if success and not skipped
+        )
+        failed = sum(
+            1 for _, success, skipped in results if not success and not skipped
+        )
+        skipped = sum(1 for _, _, is_skipped in results if is_skipped)
+
+        logger.debug(f"\n{'=' * 60}")
+        logger.debug("Ingestion Summary (Async)")
+        logger.debug(f"{'=' * 60}")
+        logger.debug(f"Total pipelines: {total}")
+        logger.debug(f"Successful: {successful}")
+        logger.debug(f"Failed: {failed}")
+        logger.debug(f"Skipped: {skipped}")
+        logger.debug(f"{'=' * 60}\n")
+
+        if successful == 0:
+            logger.warning("all pipeline(s) failed. Check logs for details.")
+            sys.exit(1)
+        elif failed > 0:
+            logger.warning(f"{failed} pipeline(s) failed. Check logs for details.")
+        else:
+            logger.info("All pipelines completed successfully!")
+
         self.save_file_metadata()
