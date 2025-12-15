@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from typing import Any
@@ -392,40 +393,70 @@ class RAGService:
 
         return sources
 
-    def query_vectors_directly(
-        self, query: "str", category: "str | None" = None, max_chunks: "int" = 5
-    ) -> "str":
+    async def _get_files_from_vector_store_async(
+        self, category: "str"
+    ) -> "list[dict[str, str]]":
         """
-        an alternative RAG approach: Query vector stores directly and build context.
-        This is the second approach shown in ingest_openai.py (lines 420-444).
-        Returns context string that can be prepended to prompts.
+        gets asynchronously all files from vector stores.
         """
         if not self.client:
-            return ""
+            return []
 
+        client = self.client
         vector_store_ids = self.get_vector_store_ids(category)
 
-        if not vector_store_ids:
-            logger.warning(f"RAG Service: No vector stores for category '{category}'")
-            return ""
-
-        all_chunks = []
-        for vector_db_id in vector_store_ids:
+        async def fetch_files_from_store(vs_id: "str") -> "list[Any] | None":
+            """Fetch files from a single vector store"""
             try:
-                query_results = self.client.vector_io.query(
-                    vector_db_id=vector_db_id,
-                    query=query,
-                    params={"max_chunks": max_chunks},
+                files = await asyncio.to_thread(
+                    client.vector_stores.files.list, vector_store_id=vs_id
                 )
-                all_chunks.extend(query_results.chunks)
+                return list(files) if files else []
             except Exception as e:
-                logger.error(f"RAG Service: Error querying {vector_db_id}: {e}")
+                logger.debug(f"Could not list files for vector store {vs_id}: {e}")
+                return None
 
-        if not all_chunks:
-            return ""
+        tasks = [fetch_files_from_store(vs_id) for vs_id in vector_store_ids]
+        results = await asyncio.gather(*tasks)
 
-        # Build context from chunks
-        context = "\n\n".join([chunk.content for chunk in all_chunks])
-        logger.info(f"RAG Service: Retrieved {len(all_chunks)} chunks for query")
+        sources = []
+        seen_files = set()
 
-        return context
+        for files in results:
+            if not files:
+                continue
+
+            for file_info in files:
+                file_id = getattr(file_info, "id", None) or getattr(
+                    file_info, "file_id", None
+                )
+
+                if file_id and file_id not in seen_files:
+                    seen_files.add(file_id)
+
+                    if file_id in self.file_metadata:
+                        metadata = self.file_metadata[file_id]
+                        sources.append(
+                            {
+                                "filename": metadata.get("original_filename", file_id),
+                                "url": metadata.get("github_url", ""),
+                                "snippet": "",
+                            }
+                        )
+                        continue
+
+                    filename = getattr(file_info, "filename", None) or file_id
+                    source_url = self.get_source_url(category, filename)
+                    sources.append(
+                        {
+                            "filename": filename,
+                            "url": source_url,
+                            "snippet": "",
+                        }
+                    )
+
+        logger.info(
+            f"RAG Service: Retrieved {len(sources)} source files from "
+            f"{len(vector_store_ids)} vector stores (async)"
+        )
+        return sources
